@@ -1,0 +1,44 @@
++-------------------------------------------------------------------------------------+
+|  Agentic AI with Feast Feature Store                                               |
++-------------------------------------------------------------------------------------+
+|                                                                                     |
+|  +-------------------------+  +------------------------+  +----------------------+   |
+|  | Product Recommendations |  | Fraud Detection        |  | Customer Segmentation|   |
+|  |                         |  |                        |  |                      |   |
+|  | [Run Agent]             |  | [Run Agent]            |  | [Run Agent]          |   |
+|  +-------------------------+  +------------------------+  +----------------------+   |
+|                                                                                     |
++-------------------------------------------------------------------------------------+
+|                                                                                     |
+|  +--------------------------+                    +-----------------------------+     |
+|  | Results                  |                    | Agent Activity              |     |
+|  |                          |                    |                             |     |
+|  | Customer Info:           |                    | 2025-02-25 10:23:45         |     |
+|  | Age: 34                  |                    | make_recommendation         |     |
+|  | Income: $85,000          |                    | Generated recommendations   |     |
+|  | Purchase History: 28     |                    |                             |     |
+|  |                          |                    | 2025-02-25 10:22:30         |     |
+|  | Recommendations:         |                    | get_feature_info            |     |
+|  | 1. MacBook Pro - 92%     |                    | Retrieved customer features |     |
+|  | 2. AirPods Pro - 87%     |                    |                             |     |
+|  | 3. iPad Air - 79%        |                    | 2025-02-25 10:21:15         |     |
+|  |                          |                    | detect_fraud                |     |
+|  | [Match Score Chart]      |                    | Analyzed transaction TX-5678|     |
+|  |                          |                    |                             |     |
+|  +--------------------------+                    +-----------------------------+     |
+|                                                                                     |
+|  +--------------------------+                                                       |
+|  | Feature Store Info       |                                                       |
+|  |                          |                                                       |
+|  | Feature Views:           |                                                       |
+|  | - customer_features      |                                                       |
+|  | - product_features       |                                                       |
+|  | - transaction_features   |                                                       |
+|  |                          |                                                       |
+|  | Feature Services:        |                                                       |
+|  | - recommendation_service |                                                       |
+|  | - fraud_detection_service|                                                       |
+|  | - segmentation_service   |                                                       |
+|  +--------------------------+                                                       |
+|                                                                                     |
++-------------------------------------------------------------------------------------+

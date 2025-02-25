@@ -1,0 +1,43 @@
++-------------------+        +--------------------+        +-------------------+
+|                   |        |                    |        |                   |
+|    Data Sources   |------->| Feature Store      |------->|  AI Agent System  |
+|    (Offline)      |        | (Feast)            |        |  (LangChain)      |
+|                   |        |                    |        |                   |
++-------------------+        +--------------------+        +-------------------+
+                                      ^                            |
+                                      |                            |
+                                      |                            v
+                                      |                    +-------------------+
+                                      |                    |                   |
+                                      +--------------------+    Frontend UI    |
+                                                          |    (React)         |
+                                                          |                    |
+                                                          +-------------------+
+
++----------------------------------------------------------------------------------------+
+|                                                                                        |
+|  Agentic AI with Feast Feature Store - Architecture                                    |
+|                                                                                        |
+|  1. Data Sources:                                                                      |
+|     - Batch data from data warehouse                                                   |
+|     - Streaming data for real-time features                                            |
+|                                                                                        |
+|  2. Feature Store (Feast):                                                             |
+|     - Feature Registry                                                                 |
+|     - Feature Views                                                                    |
+|     - Feature Services                                                                 |
+|     - Online & Offline Store                                                           |
+|                                                                                        |
+|  3. AI Agent System:                                                                   |
+|     - LLM (Ollama/Mistral)                                                             |
+|     - Agent Tools                                                                      |
+|     - Memory                                                                           |
+|     - Request Processing                                                               |
+|                                                                                        |
+|  4. Frontend UI:                                                                       |
+|     - Dashboard                                                                        |
+|     - Agent Activity Log                                                               |
+|     - Visualizations                                                                   |
+|     - User Controls                                                                    |
+|                                                                                        |
++----------------------------------------------------------------------------------------+
