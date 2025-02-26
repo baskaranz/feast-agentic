@@ -204,15 +204,27 @@ docker-compose up
 docker-compose -f docker-compose.prod.yml up
 ```
 
-### Quick Try with Pre-built Images
-We provide pre-built Docker images with the latest features:
+### Quick Try with Docker Compose
+You can build and run the Docker images locally with Docker Compose:
 
 ```bash
-# Pull and run the pre-built images
-# Option 1: Load pre-built images from the dist directory (recommended)
-docker load < dist/feast-agentic-frontend-flow-diagram.tar.gz
-docker load < dist/feast-agentic-backend-flow-diagram.tar.gz
-docker pull ollama/ollama:latest
+# Build and run the Docker images with the flow diagram feature
+git checkout feature/processing-flow-diagram  # Make sure you're on the feature branch
+docker-compose up --build
+```
+
+The application will be available at http://localhost:3000. The flow diagram visualization feature will be included in the built Docker images.
+
+### Building for Production
+To create production-ready Docker images:
+
+```bash
+# Build the Docker images
+docker-compose build
+
+# Tag the images for production
+docker tag feast-agentic-frontend:latest feast-agentic-frontend:flow-diagram
+docker tag feast-agentic-backend:latest feast-agentic-backend:flow-diagram
 
 # Run with the production docker-compose file
 docker-compose -f docker-compose.prod.yml up
