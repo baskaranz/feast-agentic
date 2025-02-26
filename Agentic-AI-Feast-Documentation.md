@@ -209,9 +209,9 @@ We provide pre-built Docker images with the latest features:
 
 ```bash
 # Pull and run the pre-built images
-# These images contain the feature processing flow diagram visualization
-docker pull ghcr.io/baskaranz/feast-agentic-frontend:flow-diagram
-docker pull ghcr.io/baskaranz/feast-agentic-backend:flow-diagram
+# Option 1: Load pre-built images from the dist directory (recommended)
+docker load < dist/feast-agentic-frontend-flow-diagram.tar.gz
+docker load < dist/feast-agentic-backend-flow-diagram.tar.gz
 docker pull ollama/ollama:latest
 
 # Run with the production docker-compose file

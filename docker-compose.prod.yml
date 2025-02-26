@@ -12,7 +12,7 @@ services:
     restart: unless-stopped
 
   backend:
-    image: ghcr.io/baskaranz/feast-agentic-backend:flow-diagram
+    image: feast-agentic-backend:flow-diagram
     ports:
       - "8000:8000"
     environment:
@@ -31,7 +31,7 @@ services:
       start_period: 10s
 
   frontend:
-    image: ghcr.io/baskaranz/feast-agentic-frontend:flow-diagram
+    image: feast-agentic-frontend:flow-diagram
     ports:
       - "3000:3000"
     environment:
