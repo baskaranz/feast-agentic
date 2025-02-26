@@ -197,8 +197,28 @@ def add_to_history(self, action_type: str, description: str, status: str = "succ
 
 ### Docker Setup
 ```bash
+# Development mode with local files
 docker-compose up
+
+# Production mode with pre-built images
+docker-compose -f docker-compose.prod.yml up
 ```
+
+### Quick Try with Pre-built Images
+We provide pre-built Docker images with the latest features:
+
+```bash
+# Pull and run the pre-built images
+# These images contain the feature processing flow diagram visualization
+docker pull ghcr.io/baskaranz/feast-agentic-frontend:flow-diagram
+docker pull ghcr.io/baskaranz/feast-agentic-backend:flow-diagram
+docker pull ollama/ollama:latest
+
+# Run with the production docker-compose file
+docker-compose -f docker-compose.prod.yml up
+```
+
+Then open your browser to http://localhost:3000 to see the application.
 
 ### Manual Setup
 ```bash
@@ -210,7 +230,11 @@ python app.py
 # Frontend
 cd frontend
 npm install
+npm install reactflow  # Required for the flow diagram feature
 npm start
+
+# Ollama (required for LLM)
+ollama run mistral
 ```
 
 ## Technical Implementation Notes
