@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import axios from 'axios';
+import ProcessingFlowDiagram from './diagrams/ProcessingFlowDiagram';
 
 const API_URL = process.env.REACT_APP_API_URL;
 
@@ -16,6 +17,7 @@ const FeatureStoreDashboard = () => {
   const [error, setError] = useState(null);
   const [apiConnected, setApiConnected] = useState(true);
   const [useAgentMode, setUseAgentMode] = useState(true);
+  const [showDiagram, setShowDiagram] = useState(false);
 
   useEffect(() => {
     // Fetch feature views and services when component mounts
@@ -23,8 +25,9 @@ const FeatureStoreDashboard = () => {
   }, []);
 
   useEffect(() => {
-    // Reset result when switching tabs
+    // Reset result and diagram when switching tabs
     setResult(null);
+    setShowDiagram(false);
   }, [activeTab]);
 
   const fetchInitialData = async () => {
@@ -118,6 +121,7 @@ const FeatureStoreDashboard = () => {
     setLoading(true);
     setError(null);
     setResult(null); // Clear previous results when switching modes
+    setShowDiagram(false); // Reset diagram view to default
     
     try {
       if (apiConnected) {
@@ -852,51 +856,97 @@ const FeatureStoreDashboard = () => {
                  'Customer Segmentation'}
               </h2>
 
-              <div className="mb-4">
-                {activeTab === 'recommendation' || activeTab === 'segmentation' ? (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Customer ID
-                    </label>
-                    <input
-                      type="text"
-                      className="border rounded-md px-3 py-2 w-full"
-                      value={customerId}
-                      onChange={(e) => setCustomerId(e.target.value)}
-                    />
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Transaction ID
-                    </label>
-                    <input
-                      type="text"
-                      className="border rounded-md px-3 py-2 w-full"
-                      value={transactionId}
-                      onChange={(e) => setTransactionId(e.target.value)}
-                    />
+              <div className="flex justify-between items-center mb-4">
+                <div className="w-full md:w-3/4">
+                  {activeTab === 'recommendation' || activeTab === 'segmentation' ? (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Customer ID
+                      </label>
+                      <input
+                        type="text"
+                        className="border rounded-md px-3 py-2 w-full"
+                        value={customerId}
+                        onChange={(e) => setCustomerId(e.target.value)}
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Transaction ID
+                      </label>
+                      <input
+                        type="text"
+                        className="border rounded-md px-3 py-2 w-full"
+                        value={transactionId}
+                        onChange={(e) => setTransactionId(e.target.value)}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {!result && (
+                  <div className="hidden md:block">
+                    <button
+                      className="px-3 py-2 border rounded-md bg-gray-50 text-sm flex items-center"
+                      onClick={() => setShowDiagram(!showDiagram)}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3m0 0l3 3m-3-3v6m6-6l-3 3m0 0l-3-3m3 3V6" />
+                      </svg>
+                      {showDiagram ? "Hide Flow Diagram" : "Show Flow Diagram"}
+                    </button>
                   </div>
                 )}
               </div>
 
-              <button
-                className="bg-blue-600 text-white px-4 py-2 rounded-md flex items-center"
-                onClick={handleSubmit}
-                disabled={loading}
-              >
-                {loading ? (
-                  <>
-                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              <div className="flex flex-col md:flex-row md:items-center gap-4">
+                <button
+                  className="bg-blue-600 text-white px-4 py-2 rounded-md flex items-center"
+                  onClick={handleSubmit}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Processing...
+                    </>
+                  ) : (
+                    'Get Features'
+                  )}
+                </button>
+
+                <div className="md:hidden">
+                  <button
+                    className="w-full px-4 py-2 border rounded-md bg-gray-50 text-sm flex items-center justify-center"
+                    onClick={() => setShowDiagram(!showDiagram)}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3m0 0l3 3m-3-3v6m6-6l-3 3m0 0l-3-3m3 3V6" />
                     </svg>
-                    Processing...
-                  </>
-                ) : (
-                  'Get Features'
-                )}
-              </button>
+                    {showDiagram ? "Hide Flow Diagram" : "Show Flow Diagram"}
+                  </button>
+                </div>
+              </div>
+              
+              {/* Flow diagram shown here when there's no result */}
+              {!result && showDiagram && (
+                <div className="mt-6 border rounded-lg p-4 bg-white">
+                  <h3 className="text-lg font-semibold mb-2">Feature Processing Flow</h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    This diagram shows how data flows through the system in {useAgentMode ? "AI Agent" : "Traditional"} mode.
+                  </p>
+                  <div className="flow-diagram-container h-96 border border-gray-200 rounded">
+                    <ProcessingFlowDiagram 
+                      isAgentMode={useAgentMode} 
+                      activeTab={activeTab} 
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {error && (
@@ -929,11 +979,36 @@ const FeatureStoreDashboard = () => {
                 
                 {/* Processing details panel */}
                 <div id="processing-details" className="mb-4 p-4 bg-gray-50 rounded-lg border hidden">
-                  <h4 className="font-medium mb-2">
-                    {result.data.ai_insights ? 'AI Agent Processing Steps' : 'Traditional Processing Steps'}
-                  </h4>
+                  <div className="flex justify-between items-center mb-4">
+                    <h4 className="font-medium">
+                      {result.data.ai_insights ? 'AI Agent Processing Steps' : 'Traditional Processing Steps'}
+                    </h4>
+                    
+                    {/* View toggle buttons */}
+                    <div className="flex border rounded-md overflow-hidden">
+                      <button 
+                        className={`px-3 py-1 text-xs font-medium ${!showDiagram ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}
+                        onClick={() => setShowDiagram(false)}
+                      >
+                        List View
+                      </button>
+                      <button 
+                        className={`px-3 py-1 text-xs font-medium ${showDiagram ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}
+                        onClick={() => setShowDiagram(true)}
+                      >
+                        Flow Diagram
+                      </button>
+                    </div>
+                  </div>
                   
-                  {result.data.ai_insights ? (
+                  {showDiagram ? (
+                    <div className="flow-diagram-container">
+                      <ProcessingFlowDiagram 
+                        isAgentMode={result.data.ai_insights !== undefined} 
+                        activeTab={activeTab} 
+                      />
+                    </div>
+                  ) : result.data.ai_insights ? (
                     <div className="text-sm">
                       <ol className="list-decimal pl-5 space-y-2">
                         <li className="text-blue-800">
