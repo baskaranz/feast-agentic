@@ -1,22 +1,22 @@
-# Agentic AI with Feast Feature Store
+# Feast Feature Store Integration
 
 ![Project Demo](./docs/demo.md)
 
 ## Overview
 
-This project demonstrates an Agentic AI system that interacts with a Feast feature store to perform machine learning tasks. The AI agent can retrieve features, process them, and make intelligent decisions for use cases like recommendations, fraud detection, and customer segmentation.
+This project demonstrates a feature store system using Feast for retrieving features for machine learning tasks. The feature store provides unified access to features for use cases like recommendations, fraud detection, and customer segmentation.
 
 ## Architecture
 
 The application consists of three main components:
 
 1. **Feature Store (Feast)**: Stores and serves ML features
-2. **Agentic AI System**: Retrieves features and makes decisions
-3. **Frontend Dashboard**: Visualizes the workflow and results
+2. **Feature Processing Service**: Retrieves and processes features for ML tasks
+3. **Frontend Dashboard**: Visualizes the feature data and results
 
 ![Architecture Diagram](./docs/architecture.md)
 
-## Agentic AI Workflow
+## Feature Store Workflow
 
 ### 1. Feature Registration and Storage
 
@@ -40,33 +40,9 @@ customer_features = FeatureView(
 )
 ```
 
-### 2. AI Agent Initialization
+### 2. Feature Retrieval
 
-The AI agent is initialized with:
-- Access to the feature store
-- A set of tools for specific tasks
-- A LLM for natural language reasoning
-- Memory to retain context
-
-```python
-class AIAgent:
-    def __init__(self, feature_store: FeatureStore):
-        self.feature_store = feature_store
-        self.llm = OllamaLLM(model="mistral", temperature=0.7)
-        self.memory = ConversationBufferMemory(return_messages=True)
-        self.tools = [
-            Tool(name="recommend_products", func=self._handle_recommendation),
-            Tool(name="detect_fraud", func=self._handle_fraud_detection),
-            # ... more tools
-        ]
-        self.agent = initialize_agent(tools=self.tools, llm=self.llm, 
-                                     agent=AgentType.CONVERSATIONAL_REACT_DESCRIPTION,
-                                     memory=self.memory)
-```
-
-### 3. Feature Retrieval
-
-The agent retrieves features using:
+Features are retrieved using:
 - **Online Features**: Real-time feature values for current predictions
 - **Historical Features**: Past feature values for training or analysis
 
@@ -85,41 +61,50 @@ historical_features = feature_store.get_historical_features(
 )
 ```
 
-### 4. Feature Processing & Decision Making
+### 3. Feature Processing
 
-The agent processes features through:
-1. **Task Identification**: Determine the type of task (recommendation, fraud detection, etc.)
-2. **Feature Selection**: Select relevant features for the task
-3. **LLM Reasoning**: Use LLM to reason about the features
-4. **Output Generation**: Generate appropriate outputs or predictions
+Retrieved features are processed for specific use cases through:
+1. **Feature Selection**: Select relevant features for the task
+2. **Feature Transformation**: Apply necessary transformations
+3. **Output Generation**: Generate appropriate outputs or predictions
 
 ```python
-async def process_action(self, action: AgentAction) -> AgentResponse:
-    # Convert action to a natural language query
-    query = self._create_agent_query(action)
+def process_feature_request(self, request: FeatureRequest) -> FeatureResponse:
+    # Get feature service for the requested action type
+    service = self.feature_store.get_feature_service(request.action_type)
+    features = service.get_features()
     
-    # Run the agent with the query
-    agent_response = await self.agent.ainvoke({"input": query})
+    # Get online features
+    online_features = self.feature_store.get_online_features(
+        entity_rows=[{entity_id_key: request.entity_id}],
+        features=features
+    )
     
-    # Process the agent's response
-    response = self._process_agent_response(action, agent_response)
+    # Process features based on the action type
+    if request.action_type == "recommendation":
+        result = self._process_recommendation(request.entity_id, online_features)
+    elif request.action_type == "fraud_detection":
+        result = self._process_fraud_detection(request.entity_id, online_features)
+    elif request.action_type == "segmentation":
+        result = self._process_customer_segmentation(request.entity_id, online_features)
     
     # Record the action in history
-    self.add_to_history(action_type=action.action_type, description=action.description)
+    self.add_to_history(action_type=f"get_{request.action_type}_features", 
+                        description=f"Retrieved features for {entity_id_key} {request.entity_id}")
     
-    return response
+    return result
 ```
 
-### 5. Result Presentation
+### 4. Result Presentation
 
-Results are structured as `AgentResponse` objects containing:
+Results are structured as `FeatureResponse` objects containing:
 - Status information
 - Processed data
-- Explanations or recommendations
+- Recommendations or predictions
 
 ```python
-return AgentResponse(
-    message=f"Generated product recommendations for customer {customer_id}",
+return FeatureResponse(
+    message=f"Retrieved features and generated product recommendations for customer {customer_id}",
     status="success",
     data={
         "customer_id": customer_id,
@@ -140,27 +125,26 @@ In this demo, we use a mock Feast implementation that simulates:
 
 In a production setting, you would replace this with a real Feast instance connected to data sources.
 
-### AI Agent Implementation
+### Feature Processing Implementation
 
-The AI agent uses LangChain with the following components:
-- **LLM**: Ollama running Mistral for reasoning
-- **Tools**: Specialized functions for different tasks
-- **Memory**: Conversation buffer for context retention
-- **Agent**: REACT-style agent for reasoning and tool selection
+The feature processing service handles:
+- Retrieving relevant features for specific use cases
+- Applying business logic to process the features
+- Generating predictions or recommendations based on features
+- Maintaining a history of feature retrieval operations
 
-### Fallback Mechanisms
+### Error Handling
 
 The system implements robust error handling:
-- If the LLM is unavailable, falls back to direct function calls
 - If feature retrieval fails, uses defaults or cached values
-- All errors are recorded in the agent history
+- All errors are recorded in the feature history
 
-### Agent History
+### Feature Processing History
 
-The agent maintains a chronological history of all actions:
+The service maintains a chronological history of all feature operations:
 ```python
 def add_to_history(self, action_type: str, description: str, status: str = "success"):
-    history_action = AgentHistoryAction(
+    history_action = ActionHistory(
         timestamp=datetime.utcnow().isoformat(),
         action=action_type,
         description=description,
@@ -173,21 +157,21 @@ def add_to_history(self, action_type: str, description: str, status: str = "succ
 
 ### Product Recommendations
 
-1. Agent retrieves customer features (age, income, purchase history)
+1. Customer features are retrieved (age, income, purchase history)
 2. Features are processed to determine customer preferences
-3. Agent generates personalized product recommendations
-4. Recommendations are ranked by match score
+3. Personalized product recommendations are generated
+4. Recommendations are ranked by relevance score
 
 ### Fraud Detection
 
-1. Agent retrieves transaction features and customer credit profile
+1. Transaction features and customer credit profile are retrieved
 2. Features are analyzed for suspicious patterns
 3. A fraud risk score is calculated
 4. Risk factors are identified and explained
 
 ### Customer Segmentation
 
-1. Agent retrieves comprehensive customer features
+1. Comprehensive customer features are retrieved
 2. Features are analyzed to determine customer value and behavior
 3. Customer is assigned to a segment (VIP, High Value, etc.)
 4. Tailored strategies are recommended for the segment
@@ -210,25 +194,24 @@ python app.py
 cd frontend
 npm install
 npm start
-
-# Ollama (required for LLM)
-ollama run mistral
 ```
 
 ## Technical Implementation Notes
 
 ### API Endpoints
 
-- `/agent/action`: Process an agent action
-- `/demo/recommendation`: Generate product recommendations
-- `/demo/fraud-detection`: Analyze transaction for fraud
-- `/demo/customer-segmentation`: Segment a customer
+- `/feature-views`: List all available feature views
+- `/feature-services`: List all available feature services
+- `/features/process`: Process a feature request
+- `/features/history`: View feature retrieval history
+- `/demo/recommendation`: Generate product recommendations from features
+- `/demo/fraud-detection`: Analyze transaction features for fraud
+- `/demo/customer-segmentation`: Segment a customer using their features
 
 ### Integration Points
 
 - **Backend ↔ Feature Store**: Feature retrieval and storage
-- **Backend ↔ LLM**: Natural language reasoning
-- **Frontend ↔ Backend**: API calls for agent actions
+- **Frontend ↔ Backend**: API calls for feature requests
 - **Frontend ↔ User**: Visualization and interaction
 
 ## Extending the System
@@ -238,29 +221,11 @@ ollama run mistral
 2. Register the features with appropriate metadata
 3. Create feature services for specific use cases
 
-### Adding New Agent Capabilities
-1. Implement a new handler function
-2. Add the function as a tool in the agent initialization
-3. Update the agent query creation for the new action type
-4. Add appropriate prompt templates if needed
-
-### AI Agent vs Traditional Mode
-
-This system supports both AI agent-based and traditional ML processing modes:
-
-#### AI Agent Mode
-- Uses LLM reasoning for intelligent feature processing
-- Provides natural language explanations for decisions
-- Dynamically selects relevant features based on context
-- Leverages conversational memory for context retention
-
-#### Traditional Mode
-- Uses direct function calls without LLM processing
-- Follows fixed business logic for feature processing
-- Provides deterministic outcomes with structured data
-- Generally faster but less flexible than agent mode
-
-You can toggle between these modes in the UI using the switch in the top right corner of the dashboard. This allows for comparing the different approaches and understanding the value that AI agents bring to feature processing.
+### Adding New Feature Services
+1. Implement a new feature service in the feature store
+2. Create a new processing function for the service
+3. Update the endpoints to support the new service
+4. Update the UI to display the new service
 
 ### Connecting to Real Data Sources
 1. Replace the mock feature store with a real Feast instance
@@ -270,4 +235,4 @@ You can toggle between these modes in the UI using the switch in the top right c
 
 ## Conclusion
 
-This agentic AI system demonstrates how AI agents can leverage feature stores for machine learning tasks. By combining structured feature data with LLM reasoning capabilities, the system can provide intelligent insights and recommendations in a variety of use cases.
+This feature store system demonstrates how to leverage a Feast feature store for machine learning tasks. By providing a unified interface for feature access and processing, the system enables consistent feature management for various ML applications.
