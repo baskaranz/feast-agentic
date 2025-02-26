@@ -244,6 +244,24 @@ ollama run mistral
 3. Update the agent query creation for the new action type
 4. Add appropriate prompt templates if needed
 
+### AI Agent vs Traditional Mode
+
+This system supports both AI agent-based and traditional ML processing modes:
+
+#### AI Agent Mode
+- Uses LLM reasoning for intelligent feature processing
+- Provides natural language explanations for decisions
+- Dynamically selects relevant features based on context
+- Leverages conversational memory for context retention
+
+#### Traditional Mode
+- Uses direct function calls without LLM processing
+- Follows fixed business logic for feature processing
+- Provides deterministic outcomes with structured data
+- Generally faster but less flexible than agent mode
+
+You can toggle between these modes in the UI using the switch in the top right corner of the dashboard. This allows for comparing the different approaches and understanding the value that AI agents bring to feature processing.
+
 ### Connecting to Real Data Sources
 1. Replace the mock feature store with a real Feast instance
 2. Configure offline and online stores

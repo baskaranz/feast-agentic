@@ -15,6 +15,7 @@ const AgenticAIDashboard = () => {
   const [featureServices, setFeatureServices] = useState([]);
   const [error, setError] = useState(null);
   const [apiConnected, setApiConnected] = useState(true);
+  const [useAgentMode, setUseAgentMode] = useState(true);
 
   useEffect(() => {
     // Fetch feature views and services when component mounts
@@ -65,12 +66,21 @@ const AgenticAIDashboard = () => {
       setFeatureViews(viewsResponse.data.feature_views);
       setFeatureServices(servicesResponse.data.feature_services);
       
-      // Don't try to fetch history if the previous requests worked
+      // Fetch agent history and mode
       try {
-        const historyResponse = await axios.get(`${API_URL}/agent/history`);
+        const [historyResponse, modeResponse] = await Promise.all([
+          axios.get(`${API_URL}/agent/history`),
+          axios.get(`${API_URL}/agent/mode`)
+        ]);
+        
         setAgentHistory(historyResponse.data.actions || []);
+        
+        // Set the agent mode if available
+        if (modeResponse.data && 'use_agent' in modeResponse.data) {
+          setUseAgentMode(modeResponse.data.use_agent);
+        }
       } catch (err) {
-        console.warn("Could not fetch agent history, but other API calls succeeded");
+        console.warn("Could not fetch agent history or mode, but other API calls succeeded:", err);
       }
     } catch (err) {
       console.error('Error fetching initial data:', err);
@@ -100,6 +110,50 @@ const AgenticAIDashboard = () => {
           status: 'success'
         }
       ]);
+    }
+  };
+
+  const toggleAgentMode = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      if (apiConnected) {
+        const response = await axios.post(`${API_URL}/agent/mode`, {
+          use_agent: !useAgentMode
+        });
+        
+        if (response.data && 'use_agent' in response.data) {
+          setUseAgentMode(response.data.use_agent);
+          
+          // Refresh agent history to show the mode change
+          try {
+            const historyResponse = await axios.get(`${API_URL}/agent/history`);
+            if (historyResponse.data && historyResponse.data.actions) {
+              setAgentHistory(historyResponse.data.actions);
+            }
+          } catch (err) {
+            console.warn("Could not refresh agent history after mode change");
+          }
+        }
+      } else {
+        // Mock mode toggle in demo mode
+        setUseAgentMode(!useAgentMode);
+        
+        // Add mock history entry
+        const newAction = {
+          timestamp: new Date().toISOString(),
+          action: "toggle_mode",
+          description: `Switched to ${!useAgentMode ? "Agent" : "Traditional"} Mode`,
+          status: "success"
+        };
+        setAgentHistory([newAction, ...agentHistory]);
+      }
+    } catch (err) {
+      console.error('Error toggling agent mode:', err);
+      setError('Failed to toggle agent mode');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -519,15 +573,46 @@ const AgenticAIDashboard = () => {
   return (
     <div className="max-w-6xl mx-auto p-4 md:p-6">
       <header className="mb-8">
-        <h1 className="text-2xl md:text-3xl font-bold text-gray-800">Agentic AI with Feast Feature Store</h1>
-        <p className="text-gray-600 mt-1">
-          Demonstrating AI agents interacting with feature stores for ML applications
-        </p>
-        {!apiConnected && (
-          <div className="mt-2 text-sm text-amber-600 bg-amber-50 p-2 rounded-md">
-            ⚠️ Backend API not detected. Running in demo mode with mock data.
+        <div className="flex flex-col md:flex-row md:justify-between md:items-center">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-800">Agentic AI with Feast Feature Store</h1>
+            <p className="text-gray-600 mt-1">
+              Demonstrating AI agents interacting with feature stores for ML applications
+            </p>
+            {!apiConnected && (
+              <div className="mt-2 text-sm text-amber-600 bg-amber-50 p-2 rounded-md">
+                ⚠️ Backend API not detected. Running in demo mode with mock data.
+              </div>
+            )}
           </div>
-        )}
+          
+          <div className="mt-4 md:mt-0 bg-white px-4 py-2 rounded-lg shadow border flex items-center">
+            <div className="mr-3">
+              <span className="font-semibold">Processing Mode:</span>
+            </div>
+            <div 
+              className="relative inline-block w-12 h-6 transition duration-200 ease-in-out rounded-full cursor-pointer"
+              onClick={toggleAgentMode}
+            >
+              <label
+                className={`absolute left-0 w-12 h-6 transition duration-200 ease-in-out rounded-full ${
+                  useAgentMode ? 'bg-blue-500' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`absolute left-1 top-1 w-4 h-4 transition duration-200 ease-in-out rounded-full bg-white transform ${
+                    useAgentMode ? 'translate-x-6' : 'translate-x-0'
+                  }`}
+                />
+              </label>
+            </div>
+            <div className="ml-3">
+              <span className={`text-sm font-medium ${useAgentMode ? 'text-blue-600' : 'text-gray-600'}`}>
+                {useAgentMode ? 'Agent AI' : 'Traditional ML'}
+              </span>
+            </div>
+          </div>
+        </div>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

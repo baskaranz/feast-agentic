@@ -184,57 +184,63 @@ class AgentHistoryAction(BaseModel):
     status: str
 
 class AIAgent:
-    def __init__(self, feature_store: FeatureStore):
+    def __init__(self, feature_store: FeatureStore, use_agent: bool = True):
         self.feature_store = feature_store
         self.action_history: List[AgentHistoryAction] = []
+        self.use_agent = use_agent
         
         # Get Ollama base URL from environment or use default
         ollama_base_url = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
         
-        # Initialize LangChain components with OllamaLLM
-        try:
-            self.llm = OllamaLLM(
-                model="mistral",
-                temperature=0.7,
-                base_url=ollama_base_url
-            )
-            self.memory = ConversationBufferMemory(return_messages=True)
-            
-            # Define tools for the agent
-            self.tools = [
-                Tool(
-                    name="recommend_products",
-                    func=self._handle_recommendation,
-                    description="Generate product recommendations for a customer based on their features"
-                ),
-                Tool(
-                    name="detect_fraud",
-                    func=self._handle_fraud_detection,
-                    description="Analyze a transaction for potential fraud"
-                ),
-                Tool(
-                    name="segment_customer",
-                    func=self._handle_customer_segmentation,
-                    description="Segment a customer based on their features and behavior"
-                ),
-                Tool(
-                    name="get_feature_info",
-                    func=self._handle_feature_info,
-                    description="Get information about available features for a specific feature view"
+        # Initialize LangChain components with OllamaLLM only if use_agent is True
+        if self.use_agent:
+            try:
+                self.llm = OllamaLLM(
+                    model="mistral",
+                    temperature=0.7,
+                    base_url=ollama_base_url
                 )
-            ]
-            
-            # Initialize the LangChain agent
-            self.agent = initialize_agent(
-                tools=self.tools,
-                llm=self.llm,
-                agent=AgentType.CONVERSATIONAL_REACT_DESCRIPTION,
-                memory=self.memory,
-                verbose=True
-            )
-        except Exception as e:
-            print(f"Error initializing Ollama LLM: {str(e)}")
-            # Continue without the LLM components - the app will fall back to mock responses
+                self.memory = ConversationBufferMemory(return_messages=True)
+                
+                # Define tools for the agent
+                self.tools = [
+                    Tool(
+                        name="recommend_products",
+                        func=self._handle_recommendation,
+                        description="Generate product recommendations for a customer based on their features"
+                    ),
+                    Tool(
+                        name="detect_fraud",
+                        func=self._handle_fraud_detection,
+                        description="Analyze a transaction for potential fraud"
+                    ),
+                    Tool(
+                        name="segment_customer",
+                        func=self._handle_customer_segmentation,
+                        description="Segment a customer based on their features and behavior"
+                    ),
+                    Tool(
+                        name="get_feature_info",
+                        func=self._handle_feature_info,
+                        description="Get information about available features for a specific feature view"
+                    )
+                ]
+                
+                # Initialize the LangChain agent
+                self.agent = initialize_agent(
+                    tools=self.tools,
+                    llm=self.llm,
+                    agent=AgentType.CONVERSATIONAL_REACT_DESCRIPTION,
+                    memory=self.memory,
+                    verbose=True
+                )
+                print("Agent mode initialized successfully")
+            except Exception as e:
+                print(f"Error initializing Ollama LLM: {str(e)}")
+                # Continue without the LLM components - the app will fall back to direct function calls
+                self.use_agent = False
+        else:
+            print("Traditional mode initialized (not using AI agent)")
         
         # Define action-specific prompt templates
         self.recommendation_prompt = PromptTemplate(
@@ -290,29 +296,38 @@ class AIAgent:
 
     async def process_action(self, action: AgentAction) -> AgentResponse:
         try:
-            # First check if agent is initialized
-            if not hasattr(self, 'agent'):
-                # Fall back to direct function calls if agent is not available
+            # If agent mode is disabled or agent not initialized, use direct function calls
+            if not self.use_agent or not hasattr(self, 'agent'):
+                # Use direct function calls for traditional, non-agent mode
                 if action.action_type == "make_recommendation":
                     result = self._handle_recommendation(action.parameters)
-                    self.add_to_history(action_type=action.action_type, description=action.description)
+                    self.add_to_history(
+                        action_type=action.action_type, 
+                        description=f"{action.description} (Traditional Mode)"
+                    )
                     return result
                 elif action.action_type == "detect_fraud":
                     result = self._handle_fraud_detection(action.parameters)
-                    self.add_to_history(action_type=action.action_type, description=action.description)
+                    self.add_to_history(
+                        action_type=action.action_type, 
+                        description=f"{action.description} (Traditional Mode)"
+                    )
                     return result
                 elif action.action_type == "segment_customer":
                     result = self._handle_customer_segmentation(action.parameters)
-                    self.add_to_history(action_type=action.action_type, description=action.description)
+                    self.add_to_history(
+                        action_type=action.action_type, 
+                        description=f"{action.description} (Traditional Mode)"
+                    )
                     return result
                 else:
                     raise ValueError(f"Unsupported action type: {action.action_type}")
             
-            # Convert the action into a natural language query for the agent
+            # Agent mode: Convert the action into a natural language query
             query = self._create_agent_query(action)
             
             try:
-                # Run the agent with async invoke (replacing arun)
+                # Run the agent with async invoke
                 agent_response = await self.agent.ainvoke({"input": query})
                 if isinstance(agent_response, dict) and "output" in agent_response:
                     agent_response = agent_response["output"]
@@ -321,15 +336,24 @@ class AIAgent:
                 # Fall back to direct function calls if LLM fails
                 if action.action_type == "make_recommendation":
                     result = self._handle_recommendation(action.parameters)
-                    self.add_to_history(action_type=action.action_type, description=action.description)
+                    self.add_to_history(
+                        action_type=action.action_type, 
+                        description=f"{action.description} (Agent Mode with Fallback)"
+                    )
                     return result
                 elif action.action_type == "detect_fraud":
                     result = self._handle_fraud_detection(action.parameters)
-                    self.add_to_history(action_type=action.action_type, description=action.description)
+                    self.add_to_history(
+                        action_type=action.action_type, 
+                        description=f"{action.description} (Agent Mode with Fallback)"
+                    )
                     return result
                 elif action.action_type == "segment_customer":
                     result = self._handle_customer_segmentation(action.parameters)
-                    self.add_to_history(action_type=action.action_type, description=action.description)
+                    self.add_to_history(
+                        action_type=action.action_type, 
+                        description=f"{action.description} (Agent Mode with Fallback)"
+                    )
                     return result
                 else:
                     raise ValueError(f"Unsupported action type: {action.action_type}")
@@ -340,7 +364,7 @@ class AIAgent:
             # Add successful action to history
             self.add_to_history(
                 action_type=action.action_type,
-                description=action.description
+                description=f"{action.description} (Agent Mode)"
             )
             
             return response
@@ -695,6 +719,10 @@ class AIAgent:
             }
         )
 
+# Data model for mode toggle
+class ModeToggle(BaseModel):
+    use_agent: bool
+
 # API Setup
 app = FastAPI(title="Agentic AI with Feast Feature Store")
 
@@ -708,7 +736,7 @@ app.add_middleware(
 
 # Initialize Feature Store and AI Agent
 feature_store = FeatureStore(repo_path="./feature_repo")
-ai_agent = AIAgent(feature_store)
+ai_agent = AIAgent(feature_store, use_agent=True)  # Default to agent mode
 
 @app.get("/")
 async def root():
@@ -751,6 +779,26 @@ async def agent_action(action: AgentAction):
 @app.get("/agent/history")
 async def agent_history():
     return {"actions": ai_agent.action_history}
+
+@app.get("/agent/mode")
+async def get_agent_mode():
+    return {"use_agent": ai_agent.use_agent}
+
+@app.post("/agent/mode")
+async def set_agent_mode(mode: ModeToggle):
+    # Create a new agent with the requested mode
+    global ai_agent
+    ai_agent = AIAgent(feature_store, use_agent=mode.use_agent)
+    
+    # Add this mode change to the history
+    mode_name = "Agent Mode" if mode.use_agent else "Traditional Mode"
+    ai_agent.add_to_history(
+        action_type="toggle_mode",
+        description=f"Switched to {mode_name}",
+        status="success"
+    )
+    
+    return {"message": f"Switched to {mode_name}", "use_agent": mode.use_agent}
 
 @app.post("/demo/recommendation")
 async def demo_recommendation(customer_id: str = Body(..., embed=True)):
