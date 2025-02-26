@@ -1,7 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import axios from 'axios';
-import ProcessingFlowDiagram from './diagrams/ProcessingFlowDiagram';
+import FallbackProcessingDiagram from './diagrams/FallbackProcessingDiagram';
+
+// Lazy load the ReactFlow component to handle potential import failures
+const ProcessingFlowDiagram = lazy(() => {
+  return import('./diagrams/ProcessingFlowDiagram')
+    .catch(() => {
+      console.warn('Failed to load ReactFlow - using fallback diagram');
+      return { default: FallbackProcessingDiagram };
+    });
+});
 
 const API_URL = process.env.REACT_APP_API_URL;
 
@@ -940,10 +949,12 @@ const FeatureStoreDashboard = () => {
                     This diagram shows how data flows through the system in {useAgentMode ? "AI Agent" : "Traditional"} mode.
                   </p>
                   <div className="flow-diagram-container h-96 border border-gray-200 rounded">
-                    <ProcessingFlowDiagram 
-                      isAgentMode={useAgentMode} 
-                      activeTab={activeTab} 
-                    />
+                    <Suspense fallback={<div className="text-center p-4">Loading diagram...</div>}>
+                      <ProcessingFlowDiagram 
+                        isAgentMode={useAgentMode} 
+                        activeTab={activeTab} 
+                      />
+                    </Suspense>
                   </div>
                 </div>
               )}
@@ -1003,10 +1014,12 @@ const FeatureStoreDashboard = () => {
                   
                   {showDiagram ? (
                     <div className="flow-diagram-container">
-                      <ProcessingFlowDiagram 
-                        isAgentMode={result.data.ai_insights !== undefined} 
-                        activeTab={activeTab} 
-                      />
+                      <Suspense fallback={<div className="text-center p-4">Loading diagram...</div>}>
+                        <ProcessingFlowDiagram 
+                          isAgentMode={result.data.ai_insights !== undefined} 
+                          activeTab={activeTab} 
+                        />
+                      </Suspense>
                     </div>
                   ) : result.data.ai_insights ? (
                     <div className="text-sm">

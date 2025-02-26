@@ -54,6 +54,9 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    # Add command to install reactflow package during container startup
+    command: >
+      sh -c "npm install reactflow && npm start"
 
 networks:
   agentic-ai-network:
