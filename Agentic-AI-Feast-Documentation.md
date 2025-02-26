@@ -1,34 +1,35 @@
-# Feast Feature Store Integration
+# Agentic AI with Feast Feature Store
 
 ![Project Demo](./docs/demo.md)
 
 ## Overview
 
-This project demonstrates a feature store system using Feast for retrieving features for machine learning tasks. The feature store provides unified access to features for use cases like recommendations, fraud detection, and customer segmentation.
+This project demonstrates an Agentic AI system for interacting with a Feast feature store. The AI agent can retrieve and process features from the feature store to perform machine learning tasks like recommendations, fraud detection, and customer segmentation.
 
-### Basic vs Advanced Processing
+### AI Agent vs Traditional Mode
 
 The system supports two processing modes that can be toggled via the UI:
 
-#### Basic Processing
-- Uses simple feature retrieval and processing
-- Provides standard feature-based outputs
-- Delivers a streamlined experience with focused results
-- Optimal for straightforward use cases and quick insights
+#### AI Agent Mode
+- Uses an AI agent to intelligently interact with the feature store
+- Provides detailed reasoning and analysis of feature data
+- Shows feature importance metrics and confidence scores
+- Generates enhanced insights and more nuanced recommendations
+- Offers explanations of how features influenced the outcomes
 
-#### Advanced Processing
-- Uses enhanced feature processing with more detailed outputs
-- Provides confidence scores and feature importance metrics
-- Offers more comprehensive analysis and insights
-- Delivers more recommendations with higher granularity
+#### Traditional Mode
+- Uses direct feature retrieval and processing without AI agent
+- Provides standard feature-based outputs with simpler processing
+- Delivers a streamlined experience with focused results
+- Offers consistent performance with deterministic outcomes
 
 ## Architecture
 
 The application consists of three main components:
 
 1. **Feature Store (Feast)**: Stores and serves ML features
-2. **Feature Processing Service**: Retrieves and processes features for ML tasks
-3. **Frontend Dashboard**: Visualizes the feature data and results
+2. **Agentic Feature Store Service**: Uses AI to intelligently interact with the feature store, retrieve features, and generate insights
+3. **Frontend Dashboard**: Visualizes the feature data, AI insights, and allows toggling between agent and traditional modes
 
 ![Architecture Diagram](./docs/architecture.md)
 

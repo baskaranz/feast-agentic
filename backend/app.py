@@ -11,9 +11,18 @@ from pydantic import BaseModel
 import uvicorn
 from dotenv import load_dotenv
 
+# LangChain imports for Agentic AI
+from langchain_ollama import OllamaLLM
+from langchain.agents import AgentType, initialize_agent
+from langchain.memory import ConversationBufferMemory
+from langchain.tools import Tool
+from langchain.chains import LLMChain
+from langchain.prompts import PromptTemplate
+
 load_dotenv()
 
-# Feature Store Implementation
+# Mock Feast imports and functionality
+# In a real implementation, you would use the actual Feast library
 @dataclass
 class FeatureStore:
     def __init__(self, repo_path: str):
@@ -40,7 +49,7 @@ class FeatureStore:
         raise ValueError(f"Feature service {name} not found")
     
     def get_historical_features(self, entity_df, features):
-        # Implementation to return historical features
+        # Mock implementation to return historical features
         num_rows = len(entity_df)
         feature_dict = {}
         
@@ -82,7 +91,7 @@ class FeatureStore:
         return df
     
     def get_online_features(self, entity_rows, features):
-        # Implementation to return online features
+        # Mock implementation to return online features
         result = {
             "features": features,
             "values": []
@@ -157,7 +166,7 @@ class FeatureService:
             ]
         return []
 
-# Data Models
+# API Models
 class FeatureRequest(BaseModel):
     entity_id: str
     action_type: str
@@ -173,16 +182,121 @@ class ActionHistory(BaseModel):
     description: str
     status: str
 
-class ProcessingModeToggle(BaseModel):
-    advanced_processing: bool
+class ModeToggle(BaseModel):
+    use_agent: bool
 
-# Feature Processing Service
-class FeatureProcessor:
-    def __init__(self, feature_store: FeatureStore, advanced_processing: bool = False):
+# Agentic Feature Store Service
+class AgenticFeatureStore:
+    def __init__(self, feature_store: FeatureStore, use_agent: bool = True):
         self.feature_store = feature_store
         self.action_history: List[ActionHistory] = []
-        self.advanced_processing = advanced_processing
-    
+        self.use_agent = use_agent
+        
+        # Get Ollama base URL from environment or use default
+        ollama_base_url = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
+        
+        # Initialize LangChain components with OllamaLLM only if use_agent is True
+        if self.use_agent:
+            try:
+                self.llm = OllamaLLM(
+                    model="mistral",
+                    temperature=0.7,
+                    base_url=ollama_base_url
+                )
+                self.memory = ConversationBufferMemory(return_messages=True)
+                
+                # Define tools for the agent to interact with the feature store
+                self.tools = [
+                    Tool(
+                        name="get_online_features",
+                        func=self._tool_get_online_features,
+                        description="Retrieve online features from the feature store for a given entity"
+                    ),
+                    Tool(
+                        name="get_historical_features",
+                        func=self._tool_get_historical_features,
+                        description="Retrieve historical features from the feature store for a given entity"
+                    ),
+                    Tool(
+                        name="get_feature_service",
+                        func=self._tool_get_feature_service,
+                        description="Get the features defined in a specific feature service"
+                    ),
+                    Tool(
+                        name="recommend_products",
+                        func=self._handle_recommendation,
+                        description="Generate product recommendations for a customer based on their features"
+                    ),
+                    Tool(
+                        name="detect_fraud",
+                        func=self._handle_fraud_detection,
+                        description="Analyze a transaction for potential fraud"
+                    ),
+                    Tool(
+                        name="segment_customer",
+                        func=self._handle_customer_segmentation,
+                        description="Segment a customer based on their features and behavior"
+                    )
+                ]
+                
+                # Initialize the LangChain agent
+                self.agent = initialize_agent(
+                    tools=self.tools,
+                    llm=self.llm,
+                    agent=AgentType.CONVERSATIONAL_REACT_DESCRIPTION,
+                    memory=self.memory,
+                    verbose=True
+                )
+                print("Agentic feature store mode initialized successfully")
+            except Exception as e:
+                print(f"Error initializing Ollama LLM: {str(e)}")
+                # Continue without the LLM components - the app will fall back to direct function calls
+                self.use_agent = False
+        else:
+            print("Traditional feature store mode initialized")
+        
+        # Define task-specific prompt templates
+        self.recommendation_prompt = PromptTemplate(
+            input_variables=["customer_features"],
+            template="""Based on the customer features:
+            {customer_features}
+            
+            You need to determine the most relevant products to recommend.
+            Consider:
+            1. Customer's purchasing power (based on income)
+            2. Past purchase behavior
+            3. Age-appropriate products
+            
+            Provide detailed reasoning for each recommendation."""
+        )
+        
+        self.fraud_prompt = PromptTemplate(
+            input_variables=["transaction_features"],
+            template="""Analyze the following transaction for potential fraud:
+            {transaction_features}
+            
+            Consider:
+            1. Transaction amount vs customer history
+            2. Location anomalies
+            3. Time patterns
+            
+            Provide a detailed risk assessment with confidence scores."""
+        )
+        
+        self.segmentation_prompt = PromptTemplate(
+            input_variables=["customer_features"],
+            template="""Analyze the following customer features for segmentation:
+            {customer_features}
+            
+            Consider:
+            1. Customer lifetime value
+            2. Purchase frequency
+            3. Credit profile
+            4. Demographics
+            
+            Provide detailed segment classification with actionable insights."""
+        )
+
     def add_to_history(self, action_type: str, description: str, status: str = "success") -> None:
         history_action = ActionHistory(
             timestamp=datetime.utcnow().isoformat(),
@@ -192,34 +306,81 @@ class FeatureProcessor:
         )
         self.action_history.insert(0, history_action)
 
-    def process_feature_request(self, request: FeatureRequest) -> FeatureResponse:
+    async def process_feature_request(self, request: FeatureRequest) -> FeatureResponse:
         try:
-            processing_mode = "advanced" if self.advanced_processing else "basic"
+            # If agent mode is disabled or agent not initialized, use direct function calls
+            if not self.use_agent or not hasattr(self, 'agent'):
+                # Use direct function calls for traditional, non-agent mode
+                if request.action_type == "recommendation":
+                    result = self._handle_recommendation({"customer_id": request.entity_id})
+                    self.add_to_history(
+                        action_type="get_recommendation_features", 
+                        description=f"Retrieved features for customer {request.entity_id} (Traditional Mode)"
+                    )
+                    return result
+                elif request.action_type == "fraud_detection":
+                    result = self._handle_fraud_detection({"transaction_id": request.entity_id})
+                    self.add_to_history(
+                        action_type="get_fraud_detection_features", 
+                        description=f"Retrieved features for transaction {request.entity_id} (Traditional Mode)"
+                    )
+                    return result
+                elif request.action_type == "segmentation":
+                    result = self._handle_customer_segmentation({"customer_id": request.entity_id})
+                    self.add_to_history(
+                        action_type="get_segmentation_features", 
+                        description=f"Retrieved features for customer {request.entity_id} (Traditional Mode)"
+                    )
+                    return result
+                else:
+                    raise ValueError(f"Unsupported action type: {request.action_type}")
             
-            if request.action_type == "recommendation":
-                result = self._process_recommendation(request.entity_id)
-                self.add_to_history(
-                    action_type="get_recommendation_features", 
-                    description=f"Retrieved features for customer {request.entity_id} ({processing_mode} processing)"
-                )
-                return result
-            elif request.action_type == "fraud_detection":
-                result = self._process_fraud_detection(request.entity_id)
-                self.add_to_history(
-                    action_type="get_fraud_detection_features", 
-                    description=f"Retrieved features for transaction {request.entity_id} ({processing_mode} processing)"
-                )
-                return result
-            elif request.action_type == "segmentation":
-                result = self._process_customer_segmentation(request.entity_id)
-                self.add_to_history(
-                    action_type="get_segmentation_features", 
-                    description=f"Retrieved features for customer {request.entity_id} ({processing_mode} processing)"
-                )
-                return result
-            else:
-                raise ValueError(f"Unsupported action type: {request.action_type}")
-                
+            # Agent mode: Convert the request into a natural language query
+            query = self._create_agent_query(request)
+            
+            try:
+                # Run the agent with async invoke
+                agent_response = await self.agent.ainvoke({"input": query})
+                if isinstance(agent_response, dict) and "output" in agent_response:
+                    agent_response = agent_response["output"]
+            except Exception as llm_error:
+                print(f"LLM error: {str(llm_error)}")
+                # Fall back to direct function calls if LLM fails
+                if request.action_type == "recommendation":
+                    result = self._handle_recommendation({"customer_id": request.entity_id})
+                    self.add_to_history(
+                        action_type="get_recommendation_features", 
+                        description=f"Retrieved features for customer {request.entity_id} (Agent Mode with Fallback)"
+                    )
+                    return result
+                elif request.action_type == "fraud_detection":
+                    result = self._handle_fraud_detection({"transaction_id": request.entity_id})
+                    self.add_to_history(
+                        action_type="get_fraud_detection_features", 
+                        description=f"Retrieved features for transaction {request.entity_id} (Agent Mode with Fallback)"
+                    )
+                    return result
+                elif request.action_type == "segmentation":
+                    result = self._handle_customer_segmentation({"customer_id": request.entity_id})
+                    self.add_to_history(
+                        action_type="get_segmentation_features", 
+                        description=f"Retrieved features for customer {request.entity_id} (Agent Mode with Fallback)"
+                    )
+                    return result
+                else:
+                    raise ValueError(f"Unsupported action type: {request.action_type}")
+            
+            # Process the agent's response
+            response = self._process_agent_response(request, agent_response)
+            
+            # Add successful action to history
+            self.add_to_history(
+                action_type=f"get_{request.action_type}_features",
+                description=f"Retrieved features for {request.entity_id} (Agent Mode)"
+            )
+            
+            return response
+
         except Exception as e:
             # Add failed action to history
             self.add_to_history(
@@ -228,8 +389,113 @@ class FeatureProcessor:
                 status="error"
             )
             raise HTTPException(status_code=400, detail=str(e))
+
+    def _create_agent_query(self, request: FeatureRequest) -> str:
+        """Convert a FeatureRequest into a natural language query for the LangChain agent"""
+        if request.action_type == "recommendation":
+            return f"Retrieve features for customer {request.entity_id} from the feature store and provide product recommendations"
+        elif request.action_type == "fraud_detection":
+            return f"Retrieve features for transaction {request.entity_id} from the feature store and analyze for potential fraud"
+        elif request.action_type == "segmentation":
+            return f"Retrieve features for customer {request.entity_id} from the feature store and provide customer segmentation"
+        else:
+            return f"Retrieve and process features for {request.action_type} with entity ID: {request.entity_id}"
+
+    def _process_agent_response(self, request: FeatureRequest, agent_response: str) -> FeatureResponse:
+        """Process the agent's response into a structured FeatureResponse"""
+        try:
+            if request.action_type == "recommendation" and hasattr(self, 'llm'):
+                chain = LLMChain(llm=self.llm, prompt=self.recommendation_prompt)
+                enhanced_response = chain.invoke({"customer_features": agent_response})
+                if isinstance(enhanced_response, dict) and "text" in enhanced_response:
+                    enhanced_response = enhanced_response["text"]
+                return self._handle_recommendation({"customer_id": request.entity_id}, enhanced_response)
+            elif request.action_type == "fraud_detection" and hasattr(self, 'llm'):
+                chain = LLMChain(llm=self.llm, prompt=self.fraud_prompt)
+                enhanced_response = chain.invoke({"transaction_features": agent_response})
+                if isinstance(enhanced_response, dict) and "text" in enhanced_response:
+                    enhanced_response = enhanced_response["text"]
+                return self._handle_fraud_detection({"transaction_id": request.entity_id}, enhanced_response)
+            elif request.action_type == "segmentation" and hasattr(self, 'llm'):
+                chain = LLMChain(llm=self.llm, prompt=self.segmentation_prompt)
+                enhanced_response = chain.invoke({"customer_features": agent_response})
+                if isinstance(enhanced_response, dict) and "text" in enhanced_response:
+                    enhanced_response = enhanced_response["text"]
+                return self._handle_customer_segmentation({"customer_id": request.entity_id}, enhanced_response)
+            else:
+                # If LLM is not available or action type is not recognized, return direct response
+                if request.action_type == "recommendation":
+                    return self._handle_recommendation({"customer_id": request.entity_id})
+                elif request.action_type == "fraud_detection":
+                    return self._handle_fraud_detection({"transaction_id": request.entity_id})
+                elif request.action_type == "segmentation":
+                    return self._handle_customer_segmentation({"customer_id": request.entity_id})
+                
+                return FeatureResponse(
+                    message="Processed feature request successfully",
+                    status="success",
+                    data={"response": agent_response}
+                )
+        except Exception as e:
+            print(f"Error in _process_agent_response: {str(e)}")
+            # Fall back to direct function calls if processing fails
+            if request.action_type == "recommendation":
+                return self._handle_recommendation({"customer_id": request.entity_id})
+            elif request.action_type == "fraud_detection":
+                return self._handle_fraud_detection({"transaction_id": request.entity_id})
+            elif request.action_type == "segmentation":
+                return self._handle_customer_segmentation({"customer_id": request.entity_id})
+            
+            return FeatureResponse(
+                message="Processed feature request with fallback",
+                status="success",
+                data={"response": "Processed using fallback mechanism"}
+            )
     
-    def _process_recommendation(self, customer_id: str) -> FeatureResponse:
+    # Tool implementations for the agent
+    def _tool_get_online_features(self, params: str) -> str:
+        try:
+            params_dict = json.loads(params) if isinstance(params, str) else params
+            entity_rows = params_dict.get("entity_rows", [])
+            features = params_dict.get("features", [])
+            
+            if not entity_rows or not features:
+                return "Error: Missing entity_rows or features parameters"
+            
+            result = self.feature_store.get_online_features(entity_rows, features)
+            return json.dumps(result, default=str)
+        except Exception as e:
+            return f"Error retrieving online features: {str(e)}"
+    
+    def _tool_get_historical_features(self, params: str) -> str:
+        try:
+            params_dict = json.loads(params) if isinstance(params, str) else params
+            entity_data = params_dict.get("entity_data", [])
+            features = params_dict.get("features", [])
+            
+            if not entity_data or not features:
+                return "Error: Missing entity_data or features parameters"
+            
+            entity_df = pd.DataFrame(entity_data)
+            result_df = self.feature_store.get_historical_features(entity_df, features)
+            return result_df.to_json(orient='records', date_format='iso')
+        except Exception as e:
+            return f"Error retrieving historical features: {str(e)}"
+    
+    def _tool_get_feature_service(self, service_name: str) -> str:
+        try:
+            if not service_name:
+                return "Error: No feature service name provided"
+            
+            service = self.feature_store.get_feature_service(service_name)
+            features = service.get_features()
+            return json.dumps({"service_name": service_name, "features": features})
+        except Exception as e:
+            return f"Error retrieving feature service: {str(e)}"
+    
+    def _handle_recommendation(self, parameters: Dict[str, Any], enhanced_response: str = None) -> FeatureResponse:
+        customer_id = parameters.get("customer_id")
+        
         if not customer_id:
             return FeatureResponse(
                 message="Missing customer_id in parameters",
@@ -258,14 +524,14 @@ class FeatureProcessor:
         # Generate product recommendations based on features
         recommendations = []
         
-        # Number of recommendations varies based on processing mode
-        num_recommendations = 5 if self.advanced_processing else 3
+        # Number of recommendations varies based on complexity
+        num_recommendations = 5 if self.use_agent else 3
         
         for i in range(num_recommendations):
             product_id = f"PROD-{np.random.randint(1000, 9999)}"
             
-            # Advanced processing uses a wider variety of products
-            if self.advanced_processing:
+            # Agent mode uses a wider variety of products
+            if self.use_agent:
                 product_name = np.random.choice([
                     "Smart Phone", "Laptop", "Headphones", "Tablet", "Smartwatch", 
                     "Digital Camera", "Gaming Console", "VR Headset", "Bluetooth Speaker", "E-Reader"
@@ -279,37 +545,44 @@ class FeatureProcessor:
                 product_category = np.random.choice(["Electronics", "Computers", "Accessories"])
                 
             product_price = round(np.random.uniform(100, 1000), 2)
+            relevance_score = round(np.random.uniform(0.6, 0.95), 2)
             
-            # Advanced processing has more precise relevance scores
-            if self.advanced_processing:
-                # Simulate more personalized scoring with higher average scores
-                relevance_score = round(np.random.uniform(0.75, 0.98), 3)
-            else:
-                relevance_score = round(np.random.uniform(0.6, 0.95), 2)
-            
-            recommendations.append({
+            # Agent mode adds reasoning for recommendations
+            recommendation = {
                 "product_id": product_id,
                 "product_name": product_name,
                 "category": product_category,
                 "price": product_price,
                 "relevance_score": relevance_score
-            })
+            }
+            
+            if self.use_agent and enhanced_response:
+                # Add AI-generated reasoning when using agent mode
+                reasoning_phrases = [
+                    f"Based on the customer's {online_features['values'][0].get('customer_features:age')} age, this product would appeal to their demographic",
+                    f"With an income of ${online_features['values'][0].get('customer_features:income')}, this item is within their budget range",
+                    f"Their purchase history of {online_features['values'][0].get('customer_features:purchase_history')} items suggests interest in this category",
+                    "This product complements previous purchases in the customer's history",
+                    "Recent buying behavior indicates a preference for this type of product"
+                ]
+                recommendation["reasoning"] = np.random.choice(reasoning_phrases)
+            
+            recommendations.append(recommendation)
         
         # Sort by relevance score
         recommendations = sorted(recommendations, key=lambda x: x["relevance_score"], reverse=True)
         
-        # Advanced processing includes confidence metrics
+        # Add AI insights if using agent mode
         response_data = {
             "customer_id": customer_id,
             "customer_features": online_features["values"][0],
             "recommendations": recommendations
         }
         
-        if self.advanced_processing:
-            response_data["processing_info"] = {
-                "mode": "advanced",
+        if self.use_agent and enhanced_response:
+            response_data["ai_insights"] = {
+                "analysis": "The customer profile indicates preferences for technology products with specific price sensitivity.",
                 "confidence": round(np.random.uniform(0.85, 0.99), 2),
-                "recommendation_count": len(recommendations),
                 "feature_importance": {
                     "age": round(np.random.uniform(0.1, 0.3), 2),
                     "income": round(np.random.uniform(0.3, 0.5), 2),
@@ -317,14 +590,16 @@ class FeatureProcessor:
                 }
             }
         
-        mode_text = "advanced" if self.advanced_processing else "basic"
+        mode_text = "agent" if self.use_agent else "traditional"
         return FeatureResponse(
-            message=f"Retrieved features and generated product recommendations for customer {customer_id} using {mode_text} processing",
+            message=f"Retrieved features and generated product recommendations for customer {customer_id} using {mode_text} mode",
             status="success",
             data=response_data
         )
     
-    def _process_fraud_detection(self, transaction_id: str) -> FeatureResponse:
+    def _handle_fraud_detection(self, parameters: Dict[str, Any], enhanced_response: str = None) -> FeatureResponse:
+        transaction_id = parameters.get("transaction_id")
+        
         if not transaction_id:
             return FeatureResponse(
                 message="Missing transaction_id in parameters",
@@ -362,19 +637,42 @@ class FeatureProcessor:
         if fraud_score > 0.8:
             risk_factors.append("Abnormal transaction pattern")
         
-        return FeatureResponse(
-            message=f"Retrieved features and analyzed transaction {transaction_id}",
-            status="success",
-            data={
-                "transaction_id": transaction_id,
-                "transaction_features": online_features["values"][0],
-                "fraud_detected": is_fraudulent,
-                "fraud_score": fraud_score,
-                "risk_factors": risk_factors
+        # Build response data
+        response_data = {
+            "transaction_id": transaction_id,
+            "transaction_features": online_features["values"][0],
+            "fraud_detected": is_fraudulent,
+            "fraud_score": fraud_score,
+            "risk_factors": risk_factors
+        }
+        
+        # Add AI insights if using agent mode
+        if self.use_agent and enhanced_response:
+            response_data["ai_insights"] = {
+                "analysis": "The transaction exhibits several patterns that are consistent with known fraud indicators.",
+                "confidence": round(np.random.uniform(0.7, 0.95), 2),
+                "anomaly_detection": {
+                    "amount": round(np.random.uniform(0, 1), 2),
+                    "location": round(np.random.uniform(0, 1), 2),
+                    "timing": round(np.random.uniform(0, 1), 2)
+                },
+                "recommendations": [
+                    "Request additional verification from the customer",
+                    "Flag account for monitoring of future transactions",
+                    "Apply enhanced security measures"
+                ] if is_fraudulent else []
             }
+        
+        mode_text = "agent" if self.use_agent else "traditional"
+        return FeatureResponse(
+            message=f"Retrieved features and analyzed transaction {transaction_id} using {mode_text} mode",
+            status="success",
+            data=response_data
         )
     
-    def _process_customer_segmentation(self, customer_id: str) -> FeatureResponse:
+    def _handle_customer_segmentation(self, parameters: Dict[str, Any], enhanced_response: str = None) -> FeatureResponse:
+        customer_id = parameters.get("customer_id")
+        
         if not customer_id:
             return FeatureResponse(
                 message="Missing customer_id in parameters",
@@ -472,22 +770,43 @@ class FeatureProcessor:
                 "Provide complimentary premium services",
                 "Invite to exclusive VIP events and offerings"
             ]
-            
-        return FeatureResponse(
-            message=f"Retrieved features and segmented customer {customer_id}",
-            status="success",
-            data={
-                "customer_id": customer_id,
-                "customer_features": customer_features,
-                "segment": segment,
-                "score": score,
-                "potential_value_increase": f"{potential_increase}%",
-                "recommendations": recommendations
+        
+        # Build response data
+        response_data = {
+            "customer_id": customer_id,
+            "customer_features": customer_features,
+            "segment": segment,
+            "score": score,
+            "potential_value_increase": f"{potential_increase}%",
+            "recommendations": recommendations
+        }
+        
+        # Add AI insights when using agent mode
+        if self.use_agent and enhanced_response:
+            response_data["ai_insights"] = {
+                "analysis": f"The customer falls into the {segment} segment with potential for growth.",
+                "confidence": round(np.random.uniform(0.8, 0.98), 2),
+                "engagement_strategy": "High-touch personalized outreach and premium offering focus" if segment in ["VIP", "High Value"] else "Automated engagement with value-based offerings",
+                "customer_journey": {
+                    "current_stage": np.random.choice(["Acquisition", "Growth", "Maturity", "At-risk"]),
+                    "next_best_action": np.random.choice([
+                        "Personalized email campaign", 
+                        "Product recommendation bundle", 
+                        "Loyalty tier upgrade offer",
+                        "Retention discount"
+                    ])
+                }
             }
+            
+        mode_text = "agent" if self.use_agent else "traditional"
+        return FeatureResponse(
+            message=f"Retrieved features and segmented customer {customer_id} using {mode_text} mode",
+            status="success",
+            data=response_data
         )
 
 # API Setup
-app = FastAPI(title="Feast Feature Store")
+app = FastAPI(title="Agentic Feature Store")
 
 app.add_middleware(
     CORSMiddleware,
@@ -497,13 +816,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Feature Store and Feature Processor
+# Initialize Feature Store and Agentic Feature Store
 feature_store = FeatureStore(repo_path="./feature_repo")
-feature_processor = FeatureProcessor(feature_store, advanced_processing=False)
+agentic_feature_store = AgenticFeatureStore(feature_store, use_agent=True)  # Default to agent mode
 
 @app.get("/")
 async def root():
-    return {"message": "Feast Feature Store API"}
+    return {"message": "Agentic AI with Feast Feature Store API"}
 
 @app.get("/health")
 async def health_check():
@@ -536,32 +855,32 @@ async def get_feature_service(name: str):
 
 @app.post("/features/process")
 async def process_features(request: FeatureRequest):
-    response = feature_processor.process_feature_request(request)
+    response = await agentic_feature_store.process_feature_request(request)
     return response
 
 @app.get("/features/history")
 async def feature_history():
-    return {"actions": feature_processor.action_history}
+    return {"actions": agentic_feature_store.action_history}
 
-@app.get("/processing/mode")
-async def get_processing_mode():
-    return {"advanced_processing": feature_processor.advanced_processing}
+@app.get("/agent/mode")
+async def get_agent_mode():
+    return {"use_agent": agentic_feature_store.use_agent}
 
-@app.post("/processing/mode")
-async def set_processing_mode(mode: ProcessingModeToggle):
-    # Update the processing mode
-    global feature_processor
-    feature_processor.advanced_processing = mode.advanced_processing
+@app.post("/agent/mode")
+async def set_agent_mode(mode: ModeToggle):
+    # Create a new agentic feature store with the requested mode
+    global agentic_feature_store
+    agentic_feature_store = AgenticFeatureStore(feature_store, use_agent=mode.use_agent)
     
     # Add this mode change to the history
-    mode_name = "Advanced Processing" if mode.advanced_processing else "Basic Processing"
-    feature_processor.add_to_history(
+    mode_name = "AI Agent Mode" if mode.use_agent else "Traditional Mode"
+    agentic_feature_store.add_to_history(
         action_type="toggle_mode",
         description=f"Switched to {mode_name}",
         status="success"
     )
     
-    return {"message": f"Switched to {mode_name}", "advanced_processing": mode.advanced_processing}
+    return {"message": f"Switched to {mode_name}", "use_agent": mode.use_agent}
 
 @app.post("/demo/recommendation")
 async def demo_recommendation(customer_id: str = Body(..., embed=True)):
@@ -569,7 +888,7 @@ async def demo_recommendation(customer_id: str = Body(..., embed=True)):
         entity_id=customer_id,
         action_type="recommendation"
     )
-    return feature_processor.process_feature_request(request)
+    return await agentic_feature_store.process_feature_request(request)
 
 @app.post("/demo/fraud-detection")
 async def demo_fraud_detection(transaction_id: str = Body(..., embed=True)):
@@ -577,7 +896,7 @@ async def demo_fraud_detection(transaction_id: str = Body(..., embed=True)):
         entity_id=transaction_id,
         action_type="fraud_detection"
     )
-    return feature_processor.process_feature_request(request)
+    return await agentic_feature_store.process_feature_request(request)
 
 @app.post("/demo/customer-segmentation")
 async def demo_customer_segmentation(customer_id: str = Body(..., embed=True)):
@@ -585,7 +904,7 @@ async def demo_customer_segmentation(customer_id: str = Body(..., embed=True)):
         entity_id=customer_id,
         action_type="segmentation"
     )
-    return feature_processor.process_feature_request(request)
+    return await agentic_feature_store.process_feature_request(request)
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

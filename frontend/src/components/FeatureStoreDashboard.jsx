@@ -15,7 +15,7 @@ const FeatureStoreDashboard = () => {
   const [featureServices, setFeatureServices] = useState([]);
   const [error, setError] = useState(null);
   const [apiConnected, setApiConnected] = useState(true);
-  const [advancedProcessing, setAdvancedProcessing] = useState(false);
+  const [useAgentMode, setUseAgentMode] = useState(true);
 
   useEffect(() => {
     // Fetch feature views and services when component mounts
@@ -66,21 +66,21 @@ const FeatureStoreDashboard = () => {
       setFeatureViews(viewsResponse.data.feature_views);
       setFeatureServices(servicesResponse.data.feature_services);
       
-      // Fetch feature history and processing mode
+      // Fetch agent mode and history
       try {
         const [historyResponse, modeResponse] = await Promise.all([
           axios.get(`${API_URL}/features/history`),
-          axios.get(`${API_URL}/processing/mode`)
+          axios.get(`${API_URL}/agent/mode`)
         ]);
         
         setActionHistory(historyResponse.data.actions || []);
         
-        // Set the processing mode if available
-        if (modeResponse.data && 'advanced_processing' in modeResponse.data) {
-          setAdvancedProcessing(modeResponse.data.advanced_processing);
+        // Set the agent mode if available
+        if (modeResponse.data && 'use_agent' in modeResponse.data) {
+          setUseAgentMode(modeResponse.data.use_agent);
         }
       } catch (err) {
-        console.warn("Could not fetch feature history or processing mode, but other API calls succeeded:", err);
+        console.warn("Could not fetch feature history or agent mode, but other API calls succeeded:", err);
       }
     } catch (err) {
       console.error('Error fetching initial data:', err);
@@ -94,22 +94,67 @@ const FeatureStoreDashboard = () => {
         { 
           timestamp: '2025-02-25T10:23:45', 
           action: 'get_recommendation_features', 
-          description: 'Retrieved features for customer CUST-1234',
+          description: 'Retrieved features for customer CUST-1234 (Agent Mode)',
           status: 'success'
         },
         { 
           timestamp: '2025-02-25T10:24:12', 
           action: 'get_fraud_detection_features', 
-          description: 'Fetched features for transaction TRANS-5678',
+          description: 'Fetched features for transaction TRANS-5678 (Agent Mode)',
           status: 'success'
         },
         { 
           timestamp: '2025-02-25T10:25:33', 
           action: 'get_segmentation_features', 
-          description: 'Retrieved features for customer CUST-1234',
+          description: 'Retrieved features for customer CUST-1234 (Agent Mode)',
           status: 'success'
         }
       ]);
+    }
+  };
+
+  // Add toggle function for agent/traditional mode
+  const toggleAgentMode = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      if (apiConnected) {
+        const response = await axios.post(`${API_URL}/agent/mode`, {
+          use_agent: !useAgentMode
+        });
+        
+        if (response.data && 'use_agent' in response.data) {
+          setUseAgentMode(response.data.use_agent);
+          
+          // Refresh history to show the mode change
+          try {
+            const historyResponse = await axios.get(`${API_URL}/features/history`);
+            if (historyResponse.data && historyResponse.data.actions) {
+              setActionHistory(historyResponse.data.actions);
+            }
+          } catch (err) {
+            console.warn("Could not refresh history after mode change");
+          }
+        }
+      } else {
+        // Mock mode toggle in demo mode
+        setUseAgentMode(!useAgentMode);
+        
+        // Add mock history entry
+        const newAction = {
+          timestamp: new Date().toISOString(),
+          action: "toggle_mode",
+          description: `Switched to ${!useAgentMode ? "AI Agent" : "Traditional"} Mode`,
+          status: "success"
+        };
+        setActionHistory([newAction, ...actionHistory]);
+      }
+    } catch (err) {
+      console.error('Error toggling agent mode:', err);
+      setError('Failed to toggle agent mode');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -176,10 +221,33 @@ const FeatureStoreDashboard = () => {
 
   const mockApiResponse = (activeTab) => {
     setTimeout(() => {
+      const isAgentMode = useAgentMode;
+      
       if (activeTab === 'recommendation') {
-        setResult({
+        const recommendations = [];
+        const numRecs = isAgentMode ? 5 : 3;
+        
+        for (let i = 0; i < numRecs; i++) {
+          recommendations.push({
+            product_id: `PROD-${1000 + Math.floor(Math.random() * 9000)}`,
+            product_name: ["Smart Phone", "Laptop", "Headphones", "Tablet", "Smartwatch"][Math.floor(Math.random() * 5)],
+            category: ["Electronics", "Computers", "Accessories"][Math.floor(Math.random() * 3)],
+            price: Math.floor(100 + Math.random() * 900),
+            relevance_score: 0.6 + Math.random() * 0.35
+          });
+          
+          // Add reasoning if in agent mode
+          if (isAgentMode) {
+            recommendations[i].reasoning = "Based on the customer's age and income, this product matches their interests";
+          }
+        }
+        
+        // Sort by relevance
+        recommendations.sort((a, b) => b.relevance_score - a.relevance_score);
+        
+        const responseData = {
           status: 'success',
-          message: `Retrieved features and generated product recommendations for customer ${customerId}`,
+          message: `Retrieved features and generated product recommendations for customer ${customerId} using ${isAgentMode ? 'agent' : 'traditional'} mode`,
           data: {
             customer_id: customerId,
             customer_features: {
@@ -187,35 +255,35 @@ const FeatureStoreDashboard = () => {
               'customer_features:income': 85000,
               'customer_features:purchase_history': 28
             },
-            recommendations: [
-              {
-                product_id: 'PROD-1234',
-                product_name: 'MacBook Pro',
-                category: 'Computers',
-                price: 1299.99,
-                relevance_score: 0.92
-              },
-              {
-                product_id: 'PROD-5678',
-                product_name: 'AirPods Pro',
-                category: 'Electronics',
-                price: 249.99,
-                relevance_score: 0.87
-              },
-              {
-                product_id: 'PROD-9012',
-                product_name: 'iPad Air',
-                category: 'Tablets',
-                price: 599.99,
-                relevance_score: 0.79
-              }
-            ]
+            recommendations: recommendations
           }
-        });
+        };
+        
+        // Add AI insights if in agent mode
+        if (isAgentMode) {
+          responseData.data.ai_insights = {
+            analysis: "The customer profile indicates preferences for technology products with specific price sensitivity.",
+            confidence: 0.85 + Math.random() * 0.14,
+            feature_importance: {
+              age: 0.1 + Math.random() * 0.2,
+              income: 0.3 + Math.random() * 0.2,
+              purchase_history: 0.4 + Math.random() * 0.3
+            }
+          };
+        }
+        
+        setResult(responseData);
       } else if (activeTab === 'fraud') {
-        setResult({
+        const fraudScore = Math.random() * 0.9;
+        const riskFactors = [];
+        
+        if (fraudScore > 0.6) riskFactors.push("Unusual transaction amount");
+        if (fraudScore > 0.7) riskFactors.push("Suspicious location");
+        if (fraudScore > 0.8) riskFactors.push("Abnormal transaction pattern");
+        
+        const responseData = {
           status: 'success',
-          message: `Retrieved features and analyzed transaction ${transactionId}`,
+          message: `Retrieved features and analyzed transaction ${transactionId} using ${isAgentMode ? 'agent' : 'traditional'} mode`,
           data: {
             transaction_id: transactionId,
             transaction_features: {
@@ -224,18 +292,67 @@ const FeatureStoreDashboard = () => {
               'transaction_features:timestamp': '2025-02-25T10:15:00',
               'transaction_features:location': 'Austin'
             },
-            fraud_detected: Math.random() > 0.7,
-            fraud_score: 0.76,
-            risk_factors: [
-              'Unusual transaction amount',
-              'Suspicious location'
-            ]
+            fraud_detected: fraudScore > 0.7,
+            fraud_score: fraudScore,
+            risk_factors: riskFactors
           }
-        });
+        };
+        
+        // Add AI insights if in agent mode
+        if (isAgentMode) {
+          responseData.data.ai_insights = {
+            analysis: "The transaction exhibits several patterns that require further investigation.",
+            confidence: 0.7 + Math.random() * 0.25,
+            anomaly_detection: {
+              amount: Math.random(),
+              location: Math.random(),
+              timing: Math.random()
+            },
+            recommendations: fraudScore > 0.7 ? [
+              "Request additional verification from the customer",
+              "Flag account for monitoring of future transactions"
+            ] : []
+          };
+        }
+        
+        setResult(responseData);
       } else if (activeTab === 'segmentation') {
-        setResult({
+        const segments = ["Low Value", "Medium Value", "High Value", "VIP"];
+        const segment = segments[Math.floor(Math.random() * segments.length)];
+        const score = segment === "VIP" ? 7 + Math.floor(Math.random() * 3) :
+                    segment === "High Value" ? 5 + Math.floor(Math.random() * 2) :
+                    segment === "Medium Value" ? 3 + Math.floor(Math.random() * 2) : Math.floor(Math.random() * 3);
+        
+        let recommendations;
+        if (segment === "Low Value") {
+          recommendations = [
+            "Offer promotional discounts to increase purchase frequency",
+            "Suggest loyalty program enrollment",
+            "Target with entry-level product recommendations"
+          ];
+        } else if (segment === "Medium Value") {
+          recommendations = [
+            "Send personalized product recommendations",
+            "Offer mid-tier loyalty program benefits",
+            "Target with cross-sell opportunities"
+          ];
+        } else if (segment === "High Value") {
+          recommendations = [
+            "Provide premium customer service",
+            "Offer exclusive early access to new products",
+            "Target with premium product upsells"
+          ];
+        } else {
+          recommendations = [
+            "Assign dedicated account manager",
+            "Provide complimentary premium services",
+            "Invite to exclusive VIP events and offerings"
+          ];
+        }
+        
+        const responseData = {
           status: 'success',
-          message: `Retrieved features and segmented customer ${customerId}`,
+          message: `Retrieved features and segmented customer ${customerId} using ${isAgentMode ? 'agent' : 'traditional'} mode`,
           data: {
             customer_id: customerId,
             customer_features: {
@@ -244,19 +361,38 @@ const FeatureStoreDashboard = () => {
               'customer_features:credit_score': 720,
               'customer_features:purchase_history': 28
             },
-            segment: 'High Value',
-            score: 6,
-            potential_value_increase: '15%',
-            recommendations: [
-              'Provide premium customer service',
-              'Offer exclusive early access to new products',
-              'Target with premium product upsells'
-            ]
+            segment: segment,
+            score: score,
+            potential_value_increase: `${5 + Math.floor(Math.random() * 25)}%`,
+            recommendations: recommendations
           }
-        });
+        };
+        
+        // Add AI insights if in agent mode
+        if (isAgentMode) {
+          responseData.data.ai_insights = {
+            analysis: `The customer falls into the ${segment} segment with potential for growth.`,
+            confidence: 0.8 + Math.random() * 0.18,
+            engagement_strategy: segment === "VIP" || segment === "High Value" ? 
+              "High-touch personalized outreach and premium offering focus" : 
+              "Automated engagement with value-based offerings",
+            customer_journey: {
+              current_stage: ["Acquisition", "Growth", "Maturity", "At-risk"][Math.floor(Math.random() * 4)],
+              next_best_action: [
+                "Personalized email campaign", 
+                "Product recommendation bundle", 
+                "Loyalty tier upgrade offer",
+                "Retention discount"
+              ][Math.floor(Math.random() * 4)]
+            }
+          };
+        }
+        
+        setResult(responseData);
       }
       
       // Update feature history with mock entry
+      const modeText = useAgentMode ? "Agent Mode" : "Traditional Mode";
       const newAction = {
         timestamp: new Date().toISOString(),
         action: activeTab === 'recommendation' 
@@ -266,7 +402,7 @@ const FeatureStoreDashboard = () => {
             : 'get_segmentation_features',
         description: `Retrieved features ${activeTab === 'recommendation' ? ' for customer ' + customerId : 
                      activeTab === 'fraud' ? ' for transaction ' + transactionId : 
-                     ' for customer ' + customerId}`,
+                     ' for customer ' + customerId} (${modeText})`,
         status: 'success'
       };
       
@@ -278,11 +414,12 @@ const FeatureStoreDashboard = () => {
   const renderResultContent = () => {
     if (!result || !result.data) return null;
 
+    const isAgentMode = result.data.ai_insights !== undefined;
+
     switch (activeTab) {
       case 'recommendation':
         const recommendations = result.data.recommendations || [];
-        const processingInfo = result.data.processing_info;
-        const hasAdvancedInfo = !!processingInfo;
+        const aiInsights = result.data.ai_insights;
         
         return (
           <div className="space-y-4">
@@ -302,25 +439,25 @@ const FeatureStoreDashboard = () => {
               </div>
             </div>
 
-            {hasAdvancedInfo && (
+            {aiInsights && (
               <div className="mt-4 p-4 border rounded-lg bg-blue-50">
-                <h3 className="text-md font-medium mb-2">Advanced Processing Information</h3>
-                <div className="grid grid-cols-2 gap-4">
+                <h3 className="text-md font-medium mb-2">AI Feature Analysis</h3>
+                <div className="mb-3">
+                  <div className="text-sm text-gray-600">Analysis</div>
+                  <div className="text-base">{aiInsights.analysis}</div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mb-3">
                   <div>
                     <div className="text-sm text-gray-600">Confidence</div>
-                    <div className="text-lg font-semibold">{(processingInfo.confidence * 100).toFixed(0)}%</div>
-                  </div>
-                  <div>
-                    <div className="text-sm text-gray-600">Recommendations</div>
-                    <div className="text-lg font-semibold">{processingInfo.recommendation_count}</div>
+                    <div className="text-lg font-semibold">{(aiInsights.confidence * 100).toFixed(0)}%</div>
                   </div>
                 </div>
                 
-                {processingInfo.feature_importance && (
-                  <div className="mt-3">
+                {aiInsights.feature_importance && (
+                  <div>
                     <div className="text-sm text-gray-600 mb-1">Feature Importance</div>
                     <div className="grid grid-cols-3 gap-2">
-                      {Object.entries(processingInfo.feature_importance).map(([feature, value]) => (
+                      {Object.entries(aiInsights.feature_importance).map(([feature, value]) => (
                         <div key={feature} className="bg-white p-2 rounded">
                           <div className="text-xs text-gray-500">{feature}</div>
                           <div className="font-medium">{(value * 100).toFixed(0)}%</div>
@@ -335,19 +472,27 @@ const FeatureStoreDashboard = () => {
             <h3 className="text-lg font-medium mt-6">Recommendations</h3>
             <div className="space-y-4">
               {recommendations.map((rec, index) => (
-                <div key={index} className="border rounded-lg p-4 flex justify-between items-center">
-                  <div>
-                    <div className="font-bold">{rec?.product_name || 'Unknown Product'}</div>
-                    <div className="text-sm text-gray-500">
-                      {rec?.category || 'Uncategorized'} | ${(rec?.price || 0).toFixed(2)}
+                <div key={index} className="border rounded-lg p-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <div>
+                      <div className="font-bold">{rec?.product_name || 'Unknown Product'}</div>
+                      <div className="text-sm text-gray-500">
+                        {rec?.category || 'Uncategorized'} | ${(rec?.price || 0).toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="flex items-center">
+                      <div className="text-sm mr-2">Relevance:</div>
+                      <div className="text-lg font-bold text-green-600">
+                        {((rec?.relevance_score || 0) * 100).toFixed(0)}%
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center">
-                    <div className="text-sm mr-2">Relevance Score:</div>
-                    <div className="text-lg font-bold text-green-600">
-                      {((rec?.relevance_score || 0) * 100).toFixed(hasAdvancedInfo ? 1 : 0)}%
+                  
+                  {rec.reasoning && (
+                    <div className="mt-2 text-sm italic text-gray-600 border-t pt-2">
+                      "{rec.reasoning}"
                     </div>
-                  </div>
+                  )}
                 </div>
               ))}
               {recommendations.length === 0 && (
@@ -371,7 +516,7 @@ const FeatureStoreDashboard = () => {
                     <XAxis dataKey="product_name" />
                     <YAxis label={{ value: 'Relevance Score (%)', angle: -90, position: 'insideLeft' }} />
                     <Tooltip 
-                      formatter={(value) => [`${((value || 0) * 100).toFixed(hasAdvancedInfo ? 1 : 0)}%`, 'Relevance Score']}
+                      formatter={(value) => [`${((value || 0) * 100).toFixed(0)}%`, 'Relevance Score']}
                       labelFormatter={(label) => `Product: ${label || 'Unknown'}`}
                     />
                     <Bar dataKey="relevance_score" fill="#8884d8" name="Relevance Score" />
@@ -387,6 +532,7 @@ const FeatureStoreDashboard = () => {
         const fraudScore = result.data.fraud_score || 0;
         const fraudDetected = result.data.fraud_detected || false;
         const riskFactors = result.data.risk_factors || [];
+        const fraudAiInsights = result.data.ai_insights;
         
         return (
           <div className="space-y-4">
@@ -405,6 +551,47 @@ const FeatureStoreDashboard = () => {
                 <div className="text-xl font-bold">{transactionFeatures['customer_features:credit_score'] || 'N/A'}</div>
               </div>
             </div>
+
+            {fraudAiInsights && (
+              <div className="mt-4 p-4 border rounded-lg bg-blue-50">
+                <h3 className="text-md font-medium mb-2">AI Transaction Analysis</h3>
+                <div className="mb-3">
+                  <div className="text-sm text-gray-600">Analysis</div>
+                  <div className="text-base">{fraudAiInsights.analysis}</div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mb-3">
+                  <div>
+                    <div className="text-sm text-gray-600">Confidence</div>
+                    <div className="text-lg font-semibold">{(fraudAiInsights.confidence * 100).toFixed(0)}%</div>
+                  </div>
+                </div>
+                
+                {fraudAiInsights.anomaly_detection && (
+                  <div>
+                    <div className="text-sm text-gray-600 mb-1">Anomaly Detection</div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {Object.entries(fraudAiInsights.anomaly_detection).map(([factor, value]) => (
+                        <div key={factor} className="bg-white p-2 rounded">
+                          <div className="text-xs text-gray-500">{factor}</div>
+                          <div className="font-medium">{(value * 100).toFixed(0)}%</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {fraudAiInsights.recommendations && fraudAiInsights.recommendations.length > 0 && (
+                  <div className="mt-3">
+                    <div className="text-sm text-gray-600 mb-1">AI Recommendations</div>
+                    <ul className="list-disc ml-5">
+                      {fraudAiInsights.recommendations.map((rec, idx) => (
+                        <li key={idx} className="text-sm">{rec}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
 
             <h3 className="text-lg font-medium mt-6">Fraud Analysis</h3>
             <div className="p-6 border rounded-lg bg-gray-50">
@@ -449,6 +636,7 @@ const FeatureStoreDashboard = () => {
         const score = result.data.score || 0;
         const potentialValueIncrease = result.data.potential_value_increase || '0%';
         const segmentRecommendations = result.data.recommendations || [];
+        const segmentAiInsights = result.data.ai_insights;
         
         return (
           <div className="space-y-4">
@@ -471,6 +659,42 @@ const FeatureStoreDashboard = () => {
                 <div className="text-xl font-bold">{customerFeatures['customer_features:purchase_history'] || 0} items</div>
               </div>
             </div>
+
+            {segmentAiInsights && (
+              <div className="mt-4 p-4 border rounded-lg bg-blue-50">
+                <h3 className="text-md font-medium mb-2">AI Segmentation Analysis</h3>
+                <div className="mb-3">
+                  <div className="text-sm text-gray-600">Analysis</div>
+                  <div className="text-base">{segmentAiInsights.analysis}</div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mb-3">
+                  <div>
+                    <div className="text-sm text-gray-600">Confidence</div>
+                    <div className="text-lg font-semibold">{(segmentAiInsights.confidence * 100).toFixed(0)}%</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-gray-600">Strategy</div>
+                    <div className="text-sm">{segmentAiInsights.engagement_strategy}</div>
+                  </div>
+                </div>
+                
+                {segmentAiInsights.customer_journey && (
+                  <div>
+                    <div className="text-sm text-gray-600 mb-1">Customer Journey</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-white p-2 rounded">
+                        <div className="text-xs text-gray-500">Current Stage</div>
+                        <div className="font-medium">{segmentAiInsights.customer_journey.current_stage}</div>
+                      </div>
+                      <div className="bg-white p-2 rounded">
+                        <div className="text-xs text-gray-500">Next Best Action</div>
+                        <div className="font-medium">{segmentAiInsights.customer_journey.next_best_action}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="border rounded-lg p-6 bg-gray-50">
@@ -544,59 +768,14 @@ const FeatureStoreDashboard = () => {
     }
   };
 
-  // Add toggle function for processing mode
-  const toggleProcessingMode = async () => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      if (apiConnected) {
-        const response = await axios.post(`${API_URL}/processing/mode`, {
-          advanced_processing: !advancedProcessing
-        });
-        
-        if (response.data && 'advanced_processing' in response.data) {
-          setAdvancedProcessing(response.data.advanced_processing);
-          
-          // Refresh history to show the mode change
-          try {
-            const historyResponse = await axios.get(`${API_URL}/features/history`);
-            if (historyResponse.data && historyResponse.data.actions) {
-              setActionHistory(historyResponse.data.actions);
-            }
-          } catch (err) {
-            console.warn("Could not refresh history after mode change");
-          }
-        }
-      } else {
-        // Mock mode toggle in demo mode
-        setAdvancedProcessing(!advancedProcessing);
-        
-        // Add mock history entry
-        const newAction = {
-          timestamp: new Date().toISOString(),
-          action: "toggle_mode",
-          description: `Switched to ${!advancedProcessing ? "Advanced" : "Basic"} Processing Mode`,
-          status: "success"
-        };
-        setActionHistory([newAction, ...actionHistory]);
-      }
-    } catch (err) {
-      console.error('Error toggling processing mode:', err);
-      setError('Failed to toggle processing mode');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="max-w-6xl mx-auto p-4 md:p-6">
       <header className="mb-8">
         <div className="flex flex-col md:flex-row md:justify-between md:items-center">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-800">Feast Feature Store</h1>
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-800">Agentic Feature Store</h1>
             <p className="text-gray-600 mt-1">
-              Feature retrieval and processing for ML applications
+              AI-powered feature retrieval and processing for ML applications
             </p>
             {!apiConnected && (
               <div className="mt-2 text-sm text-amber-600 bg-amber-50 p-2 rounded-md">
@@ -611,23 +790,23 @@ const FeatureStoreDashboard = () => {
             </div>
             <div 
               className="relative inline-block w-12 h-6 transition duration-200 ease-in-out rounded-full cursor-pointer"
-              onClick={toggleProcessingMode}
+              onClick={toggleAgentMode}
             >
               <label
                 className={`absolute left-0 w-12 h-6 transition duration-200 ease-in-out rounded-full ${
-                  advancedProcessing ? 'bg-blue-500' : 'bg-gray-300'
+                  useAgentMode ? 'bg-blue-500' : 'bg-gray-300'
                 }`}
               >
                 <span
                   className={`absolute left-1 top-1 w-4 h-4 transition duration-200 ease-in-out rounded-full bg-white transform ${
-                    advancedProcessing ? 'translate-x-6' : 'translate-x-0'
+                    useAgentMode ? 'translate-x-6' : 'translate-x-0'
                   }`}
                 />
               </label>
             </div>
             <div className="ml-3">
-              <span className={`text-sm font-medium ${advancedProcessing ? 'text-blue-600' : 'text-gray-600'}`}>
-                {advancedProcessing ? 'Advanced' : 'Basic'}
+              <span className={`text-sm font-medium ${useAgentMode ? 'text-blue-600' : 'text-gray-600'}`}>
+                {useAgentMode ? 'AI Agent' : 'Traditional'}
               </span>
             </div>
           </div>
