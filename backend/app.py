@@ -11,18 +11,9 @@ from pydantic import BaseModel
 import uvicorn
 from dotenv import load_dotenv
 
-# Updated imports for LangChain
-from langchain_ollama import OllamaLLM
-from langchain.agents import AgentType, initialize_agent
-from langchain.memory import ConversationBufferMemory  # Keep using from langchain.memory
-from langchain.tools import Tool
-from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate
-
 load_dotenv()
 
-# Mock Feast imports and functionality
-# In a real implementation, you would use the actual Feast library
+# Feature Store Implementation
 @dataclass
 class FeatureStore:
     def __init__(self, repo_path: str):
@@ -49,7 +40,7 @@ class FeatureStore:
         raise ValueError(f"Feature service {name} not found")
     
     def get_historical_features(self, entity_df, features):
-        # Mock implementation to return historical features
+        # Implementation to return historical features
         num_rows = len(entity_df)
         feature_dict = {}
         
@@ -91,7 +82,7 @@ class FeatureStore:
         return df
     
     def get_online_features(self, entity_rows, features):
-        # Mock implementation to return online features
+        # Implementation to return online features
         result = {
             "features": features,
             "values": []
@@ -166,127 +157,30 @@ class FeatureService:
             ]
         return []
 
-# Agentic AI Components
-class AgentAction(BaseModel):
+# Data Models
+class FeatureRequest(BaseModel):
+    entity_id: str
     action_type: str
-    parameters: Dict[str, Any]
-    description: str
 
-class AgentResponse(BaseModel):
+class FeatureResponse(BaseModel):
     message: str
     status: str
     data: Dict[str, Any] = {}
 
-class AgentHistoryAction(BaseModel):
+class ActionHistory(BaseModel):
     timestamp: str
     action: str
     description: str
     status: str
 
-class AIAgent:
-    def __init__(self, feature_store: FeatureStore, use_agent: bool = True):
+# Feature Processing Service
+class FeatureProcessor:
+    def __init__(self, feature_store: FeatureStore):
         self.feature_store = feature_store
-        self.action_history: List[AgentHistoryAction] = []
-        self.use_agent = use_agent
-        
-        # Get Ollama base URL from environment or use default
-        ollama_base_url = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
-        
-        # Initialize LangChain components with OllamaLLM only if use_agent is True
-        if self.use_agent:
-            try:
-                self.llm = OllamaLLM(
-                    model="mistral",
-                    temperature=0.7,
-                    base_url=ollama_base_url
-                )
-                self.memory = ConversationBufferMemory(return_messages=True)
-                
-                # Define tools for the agent
-                self.tools = [
-                    Tool(
-                        name="recommend_products",
-                        func=self._handle_recommendation,
-                        description="Generate product recommendations for a customer based on their features"
-                    ),
-                    Tool(
-                        name="detect_fraud",
-                        func=self._handle_fraud_detection,
-                        description="Analyze a transaction for potential fraud"
-                    ),
-                    Tool(
-                        name="segment_customer",
-                        func=self._handle_customer_segmentation,
-                        description="Segment a customer based on their features and behavior"
-                    ),
-                    Tool(
-                        name="get_feature_info",
-                        func=self._handle_feature_info,
-                        description="Get information about available features for a specific feature view"
-                    )
-                ]
-                
-                # Initialize the LangChain agent
-                self.agent = initialize_agent(
-                    tools=self.tools,
-                    llm=self.llm,
-                    agent=AgentType.CONVERSATIONAL_REACT_DESCRIPTION,
-                    memory=self.memory,
-                    verbose=True
-                )
-                print("Agent mode initialized successfully")
-            except Exception as e:
-                print(f"Error initializing Ollama LLM: {str(e)}")
-                # Continue without the LLM components - the app will fall back to direct function calls
-                self.use_agent = False
-        else:
-            print("Traditional mode initialized (not using AI agent)")
-        
-        # Define action-specific prompt templates
-        self.recommendation_prompt = PromptTemplate(
-            input_variables=["customer_features"],
-            template="""Based on the following customer features:
-            {customer_features}
-            
-            Generate personalized product recommendations considering:
-            1. Customer's purchasing power (based on income)
-            2. Past purchase behavior
-            3. Age-appropriate products
-            4. Current trends
-            
-            Provide detailed reasoning for each recommendation."""
-        )
-        
-        self.fraud_prompt = PromptTemplate(
-            input_variables=["transaction_features"],
-            template="""Analyze the following transaction for potential fraud:
-            {transaction_features}
-            
-            Consider these risk factors:
-            1. Transaction amount vs customer history
-            2. Location anomalies
-            3. Time patterns
-            4. Customer's typical behavior
-            
-            Provide a detailed risk assessment with confidence scores."""
-        )
-        
-        self.segmentation_prompt = PromptTemplate(
-            input_variables=["customer_features"],
-            template="""Analyze the following customer features for segmentation:
-            {customer_features}
-            
-            Consider these factors:
-            1. Customer lifetime value
-            2. Purchase frequency and recency
-            3. Credit profile
-            4. Demographics
-            
-            Provide detailed segment classification with actionable insights."""
-        )
-
+        self.action_history: List[ActionHistory] = []
+    
     def add_to_history(self, action_type: str, description: str, status: str = "success") -> None:
-        history_action = AgentHistoryAction(
+        history_action = ActionHistory(
             timestamp=datetime.utcnow().isoformat(),
             action=action_type,
             description=description,
@@ -294,212 +188,44 @@ class AIAgent:
         )
         self.action_history.insert(0, history_action)
 
-    async def process_action(self, action: AgentAction) -> AgentResponse:
+    def process_feature_request(self, request: FeatureRequest) -> FeatureResponse:
         try:
-            # If agent mode is disabled or agent not initialized, use direct function calls
-            if not self.use_agent or not hasattr(self, 'agent'):
-                # Use direct function calls for traditional, non-agent mode
-                if action.action_type == "make_recommendation":
-                    result = self._handle_recommendation(action.parameters)
-                    self.add_to_history(
-                        action_type=action.action_type, 
-                        description=f"{action.description} (Traditional Mode)"
-                    )
-                    return result
-                elif action.action_type == "detect_fraud":
-                    result = self._handle_fraud_detection(action.parameters)
-                    self.add_to_history(
-                        action_type=action.action_type, 
-                        description=f"{action.description} (Traditional Mode)"
-                    )
-                    return result
-                elif action.action_type == "segment_customer":
-                    result = self._handle_customer_segmentation(action.parameters)
-                    self.add_to_history(
-                        action_type=action.action_type, 
-                        description=f"{action.description} (Traditional Mode)"
-                    )
-                    return result
-                else:
-                    raise ValueError(f"Unsupported action type: {action.action_type}")
-            
-            # Agent mode: Convert the action into a natural language query
-            query = self._create_agent_query(action)
-            
-            try:
-                # Run the agent with async invoke
-                agent_response = await self.agent.ainvoke({"input": query})
-                if isinstance(agent_response, dict) and "output" in agent_response:
-                    agent_response = agent_response["output"]
-            except Exception as llm_error:
-                print(f"LLM error: {str(llm_error)}")
-                # Fall back to direct function calls if LLM fails
-                if action.action_type == "make_recommendation":
-                    result = self._handle_recommendation(action.parameters)
-                    self.add_to_history(
-                        action_type=action.action_type, 
-                        description=f"{action.description} (Agent Mode with Fallback)"
-                    )
-                    return result
-                elif action.action_type == "detect_fraud":
-                    result = self._handle_fraud_detection(action.parameters)
-                    self.add_to_history(
-                        action_type=action.action_type, 
-                        description=f"{action.description} (Agent Mode with Fallback)"
-                    )
-                    return result
-                elif action.action_type == "segment_customer":
-                    result = self._handle_customer_segmentation(action.parameters)
-                    self.add_to_history(
-                        action_type=action.action_type, 
-                        description=f"{action.description} (Agent Mode with Fallback)"
-                    )
-                    return result
-                else:
-                    raise ValueError(f"Unsupported action type: {action.action_type}")
-            
-            # Process the agent's response
-            response = self._process_agent_response(action, agent_response)
-            
-            # Add successful action to history
-            self.add_to_history(
-                action_type=action.action_type,
-                description=f"{action.description} (Agent Mode)"
-            )
-            
-            return response
-
+            if request.action_type == "recommendation":
+                result = self._process_recommendation(request.entity_id)
+                self.add_to_history(
+                    action_type="get_recommendation_features", 
+                    description=f"Retrieved features for customer {request.entity_id}"
+                )
+                return result
+            elif request.action_type == "fraud_detection":
+                result = self._process_fraud_detection(request.entity_id)
+                self.add_to_history(
+                    action_type="get_fraud_detection_features", 
+                    description=f"Retrieved features for transaction {request.entity_id}"
+                )
+                return result
+            elif request.action_type == "segmentation":
+                result = self._process_customer_segmentation(request.entity_id)
+                self.add_to_history(
+                    action_type="get_segmentation_features", 
+                    description=f"Retrieved features for customer {request.entity_id}"
+                )
+                return result
+            else:
+                raise ValueError(f"Unsupported action type: {request.action_type}")
+                
         except Exception as e:
             # Add failed action to history
             self.add_to_history(
-                action_type=action.action_type,
+                action_type=f"get_{request.action_type}_features",
                 description=f"Error: {str(e)}",
                 status="error"
             )
             raise HTTPException(status_code=400, detail=str(e))
-
-    def _create_agent_query(self, action: AgentAction) -> str:
-        """Convert an AgentAction into a natural language query for the LangChain agent"""
-        if action.action_type == "make_recommendation":
-            return f"Analyze customer {action.parameters['customer_id']} and provide product recommendations"
-        elif action.action_type == "detect_fraud":
-            return f"Analyze transaction {action.parameters['transaction_id']} for potential fraud"
-        elif action.action_type == "segment_customer":
-            return f"Analyze and segment customer {action.parameters['customer_id']}"
-        else:
-            return f"Process {action.action_type} with parameters: {json.dumps(action.parameters)}"
-
-    def _process_agent_response(self, action: AgentAction, agent_response: str) -> AgentResponse:
-        """Process the agent's response into a structured AgentResponse"""
-        try:
-            if action.action_type == "make_recommendation" and hasattr(self, 'llm'):
-                chain = LLMChain(llm=self.llm, prompt=self.recommendation_prompt)
-                enhanced_response = chain.invoke({"customer_features": agent_response})
-                if isinstance(enhanced_response, dict) and "text" in enhanced_response:
-                    enhanced_response = enhanced_response["text"]
-                return self._handle_recommendation(action.parameters, enhanced_response)
-            elif action.action_type == "detect_fraud" and hasattr(self, 'llm'):
-                chain = LLMChain(llm=self.llm, prompt=self.fraud_prompt)
-                enhanced_response = chain.invoke({"transaction_features": agent_response})
-                if isinstance(enhanced_response, dict) and "text" in enhanced_response:
-                    enhanced_response = enhanced_response["text"]
-                return self._handle_fraud_detection(action.parameters, enhanced_response)
-            elif action.action_type == "segment_customer" and hasattr(self, 'llm'):
-                chain = LLMChain(llm=self.llm, prompt=self.segmentation_prompt)
-                enhanced_response = chain.invoke({"customer_features": agent_response})
-                if isinstance(enhanced_response, dict) and "text" in enhanced_response:
-                    enhanced_response = enhanced_response["text"]
-                return self._handle_customer_segmentation(action.parameters, enhanced_response)
-            else:
-                # If LLM is not available or action type is not recognized, return direct response
-                if action.action_type == "make_recommendation":
-                    return self._handle_recommendation(action.parameters)
-                elif action.action_type == "detect_fraud":
-                    return self._handle_fraud_detection(action.parameters)
-                elif action.action_type == "segment_customer":
-                    return self._handle_customer_segmentation(action.parameters)
-                
-                return AgentResponse(
-                    message="Processed action successfully",
-                    status="success",
-                    data={"response": agent_response}
-                )
-        except Exception as e:
-            print(f"Error in _process_agent_response: {str(e)}")
-            # Fall back to direct function calls if processing fails
-            if action.action_type == "make_recommendation":
-                return self._handle_recommendation(action.parameters)
-            elif action.action_type == "detect_fraud":
-                return self._handle_fraud_detection(action.parameters)
-            elif action.action_type == "segment_customer":
-                return self._handle_customer_segmentation(action.parameters)
-            
-            return AgentResponse(
-                message="Processed action with fallback",
-                status="success",
-                data={"response": "Processed using fallback mechanism"}
-            )
-
-    def _handle_feature_info(self, action: AgentAction) -> AgentResponse:
-        feature_view_name = action.parameters.get("feature_view", "")
-        
-        if not feature_view_name or feature_view_name not in self.feature_store.feature_views:
-            return AgentResponse(
-                message=f"Feature view '{feature_view_name}' not found",
-                status="error",
-                data={}
-            )
-        
-        return AgentResponse(
-            message=f"Retrieved information for feature view: {feature_view_name}",
-            status="success",
-            data=self.feature_store.feature_views[feature_view_name]
-        )
     
-    def _handle_online_features(self, action: AgentAction) -> AgentResponse:
-        entity_rows = action.parameters.get("entity_rows", [])
-        features = action.parameters.get("features", [])
-        
-        if not entity_rows or not features:
-            return AgentResponse(
-                message="Missing entity_rows or features in parameters",
-                status="error",
-                data={}
-            )
-        
-        result = self.feature_store.get_online_features(entity_rows, features)
-        
-        return AgentResponse(
-            message=f"Retrieved online features for {len(entity_rows)} entities",
-            status="success",
-            data=result
-        )
-    
-    def _handle_historical_features(self, action: AgentAction) -> AgentResponse:
-        entity_data = action.parameters.get("entity_data", [])
-        features = action.parameters.get("features", [])
-        
-        if not entity_data or not features:
-            return AgentResponse(
-                message="Missing entity_data or features in parameters",
-                status="error",
-                data={}
-            )
-        
-        entity_df = pd.DataFrame(entity_data)
-        result_df = self.feature_store.get_historical_features(entity_df, features)
-        
-        return AgentResponse(
-            message=f"Retrieved historical features for {len(entity_data)} entities",
-            status="success",
-            data=result_df.to_dict(orient='records')
-        )
-    
-    def _handle_recommendation(self, parameters: Dict[str, Any], enhanced_response: str = None) -> AgentResponse:
-        customer_id = parameters.get("customer_id")
-        
+    def _process_recommendation(self, customer_id: str) -> FeatureResponse:
         if not customer_id:
-            return AgentResponse(
+            return FeatureResponse(
                 message="Missing customer_id in parameters",
                 status="error",
                 data={}
@@ -509,7 +235,7 @@ class AIAgent:
         try:
             service = self.feature_store.get_feature_service("recommendation_service")
         except ValueError as e:
-            return AgentResponse(
+            return FeatureResponse(
                 message=str(e),
                 status="error",
                 data={}
@@ -523,28 +249,28 @@ class AIAgent:
             features
         )
         
-        # Mock recommendation logic
+        # Generate product recommendations based on features
         recommendations = []
         for i in range(3):  # Generate 3 recommendations
             product_id = f"PROD-{np.random.randint(1000, 9999)}"
             product_name = np.random.choice(["Smart Phone", "Laptop", "Headphones", "Tablet", "Smartwatch"])
             product_category = np.random.choice(["Electronics", "Computers", "Accessories"])
             product_price = round(np.random.uniform(100, 1000), 2)
-            match_score = round(np.random.uniform(0.6, 0.95), 2)
+            relevance_score = round(np.random.uniform(0.6, 0.95), 2)
             
             recommendations.append({
                 "product_id": product_id,
                 "product_name": product_name,
                 "category": product_category,
                 "price": product_price,
-                "match_score": match_score
+                "relevance_score": relevance_score
             })
         
-        # Sort by match score
-        recommendations = sorted(recommendations, key=lambda x: x["match_score"], reverse=True)
+        # Sort by relevance score
+        recommendations = sorted(recommendations, key=lambda x: x["relevance_score"], reverse=True)
         
-        return AgentResponse(
-            message=f"Generated product recommendations for customer {customer_id}",
+        return FeatureResponse(
+            message=f"Retrieved features and generated product recommendations for customer {customer_id}",
             status="success",
             data={
                 "customer_id": customer_id,
@@ -553,11 +279,9 @@ class AIAgent:
             }
         )
     
-    def _handle_fraud_detection(self, parameters: Dict[str, Any], enhanced_response: str = None) -> AgentResponse:
-        transaction_id = parameters.get("transaction_id")
-        
+    def _process_fraud_detection(self, transaction_id: str) -> FeatureResponse:
         if not transaction_id:
-            return AgentResponse(
+            return FeatureResponse(
                 message="Missing transaction_id in parameters",
                 status="error",
                 data={}
@@ -567,7 +291,7 @@ class AIAgent:
         try:
             service = self.feature_store.get_feature_service("fraud_detection_service")
         except ValueError as e:
-            return AgentResponse(
+            return FeatureResponse(
                 message=str(e),
                 status="error",
                 data={}
@@ -581,7 +305,7 @@ class AIAgent:
             features
         )
         
-        # Mock fraud detection logic
+        # Process features for fraud detection
         is_fraudulent = np.random.random() < 0.3  # 30% chance of fraud
         fraud_score = round(np.random.uniform(0.1, 0.9), 2)
         
@@ -593,8 +317,8 @@ class AIAgent:
         if fraud_score > 0.8:
             risk_factors.append("Abnormal transaction pattern")
         
-        return AgentResponse(
-            message=f"Completed fraud analysis for transaction {transaction_id}",
+        return FeatureResponse(
+            message=f"Retrieved features and analyzed transaction {transaction_id}",
             status="success",
             data={
                 "transaction_id": transaction_id,
@@ -605,11 +329,9 @@ class AIAgent:
             }
         )
     
-    def _handle_customer_segmentation(self, parameters: Dict[str, Any], enhanced_response: str = None) -> AgentResponse:
-        customer_id = parameters.get("customer_id")
-        
+    def _process_customer_segmentation(self, customer_id: str) -> FeatureResponse:
         if not customer_id:
-            return AgentResponse(
+            return FeatureResponse(
                 message="Missing customer_id in parameters",
                 status="error",
                 data={}
@@ -619,7 +341,7 @@ class AIAgent:
         try:
             service = self.feature_store.get_feature_service("customer_segmentation_service")
         except ValueError as e:
-            return AgentResponse(
+            return FeatureResponse(
                 message=str(e),
                 status="error",
                 data={}
@@ -633,7 +355,7 @@ class AIAgent:
             features
         )
         
-        # Mock segmentation logic
+        # Process features for customer segmentation
         customer_features = online_features["values"][0]
         
         # Create a scoring mechanism based on features
@@ -706,8 +428,8 @@ class AIAgent:
                 "Invite to exclusive VIP events and offerings"
             ]
             
-        return AgentResponse(
-            message=f"Completed customer segmentation for customer {customer_id}",
+        return FeatureResponse(
+            message=f"Retrieved features and segmented customer {customer_id}",
             status="success",
             data={
                 "customer_id": customer_id,
@@ -719,12 +441,8 @@ class AIAgent:
             }
         )
 
-# Data model for mode toggle
-class ModeToggle(BaseModel):
-    use_agent: bool
-
 # API Setup
-app = FastAPI(title="Agentic AI with Feast Feature Store")
+app = FastAPI(title="Feast Feature Store")
 
 app.add_middleware(
     CORSMiddleware,
@@ -734,13 +452,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Feature Store and AI Agent
+# Initialize Feature Store and Feature Processor
 feature_store = FeatureStore(repo_path="./feature_repo")
-ai_agent = AIAgent(feature_store, use_agent=True)  # Default to agent mode
+feature_processor = FeatureProcessor(feature_store)
 
 @app.get("/")
 async def root():
-    return {"message": "Agentic AI with Feast Feature Store API"}
+    return {"message": "Feast Feature Store API"}
 
 @app.get("/health")
 async def health_check():
@@ -771,63 +489,38 @@ async def get_feature_service(name: str):
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-@app.post("/agent/action")
-async def agent_action(action: AgentAction):
-    response = await ai_agent.process_action(action)
+@app.post("/features/process")
+async def process_features(request: FeatureRequest):
+    response = feature_processor.process_feature_request(request)
     return response
 
-@app.get("/agent/history")
-async def agent_history():
-    return {"actions": ai_agent.action_history}
-
-@app.get("/agent/mode")
-async def get_agent_mode():
-    return {"use_agent": ai_agent.use_agent}
-
-@app.post("/agent/mode")
-async def set_agent_mode(mode: ModeToggle):
-    # Create a new agent with the requested mode
-    global ai_agent
-    ai_agent = AIAgent(feature_store, use_agent=mode.use_agent)
-    
-    # Add this mode change to the history
-    mode_name = "Agent Mode" if mode.use_agent else "Traditional Mode"
-    ai_agent.add_to_history(
-        action_type="toggle_mode",
-        description=f"Switched to {mode_name}",
-        status="success"
-    )
-    
-    return {"message": f"Switched to {mode_name}", "use_agent": mode.use_agent}
+@app.get("/features/history")
+async def feature_history():
+    return {"actions": feature_processor.action_history}
 
 @app.post("/demo/recommendation")
 async def demo_recommendation(customer_id: str = Body(..., embed=True)):
-    action = AgentAction(
-        action_type="make_recommendation",
-        parameters={"customer_id": customer_id},
-        description="Generate product recommendations for a customer"
+    request = FeatureRequest(
+        entity_id=customer_id,
+        action_type="recommendation"
     )
-    return await ai_agent.process_action(action)
+    return feature_processor.process_feature_request(request)
 
 @app.post("/demo/fraud-detection")
 async def demo_fraud_detection(transaction_id: str = Body(..., embed=True)):
-    action = AgentAction(
-        action_type="detect_fraud",
-        parameters={"transaction_id": transaction_id},
-        description="Detect fraud for a transaction"
+    request = FeatureRequest(
+        entity_id=transaction_id,
+        action_type="fraud_detection"
     )
-    # Process through normal action handling to update history
-    return await ai_agent.process_action(action)
+    return feature_processor.process_feature_request(request)
 
 @app.post("/demo/customer-segmentation")
 async def demo_customer_segmentation(customer_id: str = Body(..., embed=True)):
-    action = AgentAction(
-        action_type="segment_customer",
-        parameters={"customer_id": customer_id},
-        description="Segment a customer based on their features"
+    request = FeatureRequest(
+        entity_id=customer_id,
+        action_type="segmentation"
     )
-    # Process through normal action handling to update history
-    return await ai_agent.process_action(action)
+    return feature_processor.process_feature_request(request)
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

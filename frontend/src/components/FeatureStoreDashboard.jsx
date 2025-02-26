@@ -4,18 +4,17 @@ import axios from 'axios';
 
 const API_URL = process.env.REACT_APP_API_URL;
 
-const AgenticAIDashboard = () => {
+const FeatureStoreDashboard = () => {
   const [activeTab, setActiveTab] = useState('recommendation');
   const [customerId, setCustomerId] = useState('CUST-1234');
   const [transactionId, setTransactionId] = useState('TRANS-5678');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
-  const [agentHistory, setAgentHistory] = useState([]);
+  const [actionHistory, setActionHistory] = useState([]);
   const [featureViews, setFeatureViews] = useState([]);
   const [featureServices, setFeatureServices] = useState([]);
   const [error, setError] = useState(null);
   const [apiConnected, setApiConnected] = useState(true);
-  const [useAgentMode, setUseAgentMode] = useState(true);
 
   useEffect(() => {
     // Fetch feature views and services when component mounts
@@ -66,21 +65,12 @@ const AgenticAIDashboard = () => {
       setFeatureViews(viewsResponse.data.feature_views);
       setFeatureServices(servicesResponse.data.feature_services);
       
-      // Fetch agent history and mode
+      // Fetch feature history
       try {
-        const [historyResponse, modeResponse] = await Promise.all([
-          axios.get(`${API_URL}/agent/history`),
-          axios.get(`${API_URL}/agent/mode`)
-        ]);
-        
-        setAgentHistory(historyResponse.data.actions || []);
-        
-        // Set the agent mode if available
-        if (modeResponse.data && 'use_agent' in modeResponse.data) {
-          setUseAgentMode(modeResponse.data.use_agent);
-        }
+        const historyResponse = await axios.get(`${API_URL}/features/history`);
+        setActionHistory(historyResponse.data.actions || []);
       } catch (err) {
-        console.warn("Could not fetch agent history or mode, but other API calls succeeded:", err);
+        console.warn("Could not fetch feature history, but other API calls succeeded:", err);
       }
     } catch (err) {
       console.error('Error fetching initial data:', err);
@@ -90,70 +80,26 @@ const AgenticAIDashboard = () => {
       // Set mock data for demo purposes when API is not available
       setFeatureViews(['customer_features', 'product_features', 'transaction_features']);
       setFeatureServices(['recommendation_service', 'fraud_detection_service', 'customer_segmentation_service']);
-      setAgentHistory([
+      setActionHistory([
         { 
           timestamp: '2025-02-25T10:23:45', 
-          action: 'get_feature_info', 
-          description: 'Retrieved customer feature information',
+          action: 'get_recommendation_features', 
+          description: 'Retrieved features for customer CUST-1234',
           status: 'success'
         },
         { 
           timestamp: '2025-02-25T10:24:12', 
-          action: 'get_online_features', 
-          description: 'Fetched online features for customer CUST-1234',
+          action: 'get_fraud_detection_features', 
+          description: 'Fetched features for transaction TRANS-5678',
           status: 'success'
         },
         { 
           timestamp: '2025-02-25T10:25:33', 
-          action: 'make_recommendation', 
-          description: 'Generated product recommendations for customer CUST-1234',
+          action: 'get_segmentation_features', 
+          description: 'Retrieved features for customer CUST-1234',
           status: 'success'
         }
       ]);
-    }
-  };
-
-  const toggleAgentMode = async () => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      if (apiConnected) {
-        const response = await axios.post(`${API_URL}/agent/mode`, {
-          use_agent: !useAgentMode
-        });
-        
-        if (response.data && 'use_agent' in response.data) {
-          setUseAgentMode(response.data.use_agent);
-          
-          // Refresh agent history to show the mode change
-          try {
-            const historyResponse = await axios.get(`${API_URL}/agent/history`);
-            if (historyResponse.data && historyResponse.data.actions) {
-              setAgentHistory(historyResponse.data.actions);
-            }
-          } catch (err) {
-            console.warn("Could not refresh agent history after mode change");
-          }
-        }
-      } else {
-        // Mock mode toggle in demo mode
-        setUseAgentMode(!useAgentMode);
-        
-        // Add mock history entry
-        const newAction = {
-          timestamp: new Date().toISOString(),
-          action: "toggle_mode",
-          description: `Switched to ${!useAgentMode ? "Agent" : "Traditional"} Mode`,
-          status: "success"
-        };
-        setAgentHistory([newAction, ...agentHistory]);
-      }
-    } catch (err) {
-      console.error('Error toggling agent mode:', err);
-      setError('Failed to toggle agent mode');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -182,26 +128,11 @@ const AgenticAIDashboard = () => {
           const response = await axios.post(endpoint, body);
           setResult(response.data);
           
-          // Add successful action to history with properly formatted timestamp
-          const newAction = {
-            timestamp: new Date().toISOString(),
-            action: activeTab === 'recommendation' ? 'make_recommendation' :
-                   activeTab === 'fraud' ? 'detect_fraud' :
-                   'segment_customer',
-            description: `Performed ${activeTab} analysis${
-              activeTab === 'recommendation' || activeTab === 'segmentation' 
-                ? ' for customer ' + customerId 
-                : ' for transaction ' + transactionId
-            }`,
-            status: 'success'
-          };
-          setAgentHistory(prev => [newAction, ...prev]);
-          
-          // Try to refresh agent history
+          // Try to refresh feature history
           try {
-            const historyResponse = await axios.get(`${API_URL}/agent/history`);
+            const historyResponse = await axios.get(`${API_URL}/features/history`);
             if (historyResponse.data.actions) {
-              setAgentHistory(historyResponse.data.actions);
+              setActionHistory(historyResponse.data.actions);
             }
           } catch (historyErr) {
             console.warn('Could not fetch updated history:', historyErr);
@@ -213,13 +144,13 @@ const AgenticAIDashboard = () => {
           // Add failed action to history
           const errorAction = {
             timestamp: new Date().toISOString(),
-            action: activeTab === 'recommendation' ? 'make_recommendation' :
-                   activeTab === 'fraud' ? 'detect_fraud' :
-                   'segment_customer',
-            description: `Failed to perform ${activeTab} analysis - ${apiErr.message}`,
+            action: activeTab === 'recommendation' ? 'get_recommendation_features' :
+                   activeTab === 'fraud' ? 'get_fraud_detection_features' :
+                   'get_segmentation_features',
+            description: `Failed to retrieve features - ${apiErr.message}`,
             status: 'error'
           };
-          setAgentHistory(prev => [errorAction, ...prev]);
+          setActionHistory(prev => [errorAction, ...prev]);
         }
       } else {
         // Mock API response with proper timestamp handling
@@ -238,7 +169,7 @@ const AgenticAIDashboard = () => {
       if (activeTab === 'recommendation') {
         setResult({
           status: 'success',
-          message: `Generated product recommendations for customer ${customerId}`,
+          message: `Retrieved features and generated product recommendations for customer ${customerId}`,
           data: {
             customer_id: customerId,
             customer_features: {
@@ -252,21 +183,21 @@ const AgenticAIDashboard = () => {
                 product_name: 'MacBook Pro',
                 category: 'Computers',
                 price: 1299.99,
-                match_score: 0.92
+                relevance_score: 0.92
               },
               {
                 product_id: 'PROD-5678',
                 product_name: 'AirPods Pro',
                 category: 'Electronics',
                 price: 249.99,
-                match_score: 0.87
+                relevance_score: 0.87
               },
               {
                 product_id: 'PROD-9012',
                 product_name: 'iPad Air',
                 category: 'Tablets',
                 price: 599.99,
-                match_score: 0.79
+                relevance_score: 0.79
               }
             ]
           }
@@ -274,7 +205,7 @@ const AgenticAIDashboard = () => {
       } else if (activeTab === 'fraud') {
         setResult({
           status: 'success',
-          message: `Completed fraud analysis for transaction ${transactionId}`,
+          message: `Retrieved features and analyzed transaction ${transactionId}`,
           data: {
             transaction_id: transactionId,
             transaction_features: {
@@ -294,7 +225,7 @@ const AgenticAIDashboard = () => {
       } else if (activeTab === 'segmentation') {
         setResult({
           status: 'success',
-          message: `Completed customer segmentation for customer ${customerId}`,
+          message: `Retrieved features and segmented customer ${customerId}`,
           data: {
             customer_id: customerId,
             customer_features: {
@@ -315,21 +246,21 @@ const AgenticAIDashboard = () => {
         });
       }
       
-      // Update agent history with mock entry
+      // Update feature history with mock entry
       const newAction = {
         timestamp: new Date().toISOString(),
         action: activeTab === 'recommendation' 
-          ? 'make_recommendation' 
+          ? 'get_recommendation_features' 
           : activeTab === 'fraud' 
-            ? 'detect_fraud' 
-            : 'segment_customer',
-        description: `Performed ${activeTab} analysis${activeTab === 'recommendation' ? ' for customer ' + customerId : 
+            ? 'get_fraud_detection_features' 
+            : 'get_segmentation_features',
+        description: `Retrieved features ${activeTab === 'recommendation' ? ' for customer ' + customerId : 
                      activeTab === 'fraud' ? ' for transaction ' + transactionId : 
                      ' for customer ' + customerId}`,
         status: 'success'
       };
       
-      setAgentHistory([newAction, ...agentHistory]);
+      setActionHistory([newAction, ...actionHistory]);
       setLoading(false);
     }, 1500);
   };
@@ -369,9 +300,9 @@ const AgenticAIDashboard = () => {
                     </div>
                   </div>
                   <div className="flex items-center">
-                    <div className="text-sm mr-2">Match Score:</div>
+                    <div className="text-sm mr-2">Relevance Score:</div>
                     <div className="text-lg font-bold text-green-600">
-                      {((rec?.match_score || 0) * 100).toFixed(0)}%
+                      {((rec?.relevance_score || 0) * 100).toFixed(0)}%
                     </div>
                   </div>
                 </div>
@@ -389,18 +320,18 @@ const AgenticAIDashboard = () => {
                   <BarChart
                     data={recommendations.map(rec => ({
                       product_name: rec.product_name,
-                      match_score: rec.match_score
+                      relevance_score: rec.relevance_score
                     }))}
                     margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="product_name" />
-                    <YAxis label={{ value: 'Match Score (%)', angle: -90, position: 'insideLeft' }} />
+                    <YAxis label={{ value: 'Relevance Score (%)', angle: -90, position: 'insideLeft' }} />
                     <Tooltip 
-                      formatter={(value) => [`${((value || 0) * 100).toFixed(0)}%`, 'Match Score']}
+                      formatter={(value) => [`${((value || 0) * 100).toFixed(0)}%`, 'Relevance Score']}
                       labelFormatter={(label) => `Product: ${label || 'Unknown'}`}
                     />
-                    <Bar dataKey="match_score" fill="#8884d8" name="Match Score" />
+                    <Bar dataKey="relevance_score" fill="#8884d8" name="Relevance Score" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -536,7 +467,7 @@ const AgenticAIDashboard = () => {
     }
   };
 
-  // Update the Agent Activity timestamp display
+  // Format timestamp for display
   const formatTimestamp = (timestamp) => {
     try {
       // Ensure we have a valid string
@@ -575,42 +506,15 @@ const AgenticAIDashboard = () => {
       <header className="mb-8">
         <div className="flex flex-col md:flex-row md:justify-between md:items-center">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-800">Agentic AI with Feast Feature Store</h1>
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-800">Feast Feature Store</h1>
             <p className="text-gray-600 mt-1">
-              Demonstrating AI agents interacting with feature stores for ML applications
+              Feature retrieval and processing for ML applications
             </p>
             {!apiConnected && (
               <div className="mt-2 text-sm text-amber-600 bg-amber-50 p-2 rounded-md">
                 ⚠️ Backend API not detected. Running in demo mode with mock data.
               </div>
             )}
-          </div>
-          
-          <div className="mt-4 md:mt-0 bg-white px-4 py-2 rounded-lg shadow border flex items-center">
-            <div className="mr-3">
-              <span className="font-semibold">Processing Mode:</span>
-            </div>
-            <div 
-              className="relative inline-block w-12 h-6 transition duration-200 ease-in-out rounded-full cursor-pointer"
-              onClick={toggleAgentMode}
-            >
-              <label
-                className={`absolute left-0 w-12 h-6 transition duration-200 ease-in-out rounded-full ${
-                  useAgentMode ? 'bg-blue-500' : 'bg-gray-300'
-                }`}
-              >
-                <span
-                  className={`absolute left-1 top-1 w-4 h-4 transition duration-200 ease-in-out rounded-full bg-white transform ${
-                    useAgentMode ? 'translate-x-6' : 'translate-x-0'
-                  }`}
-                />
-              </label>
-            </div>
-            <div className="ml-3">
-              <span className={`text-sm font-medium ${useAgentMode ? 'text-blue-600' : 'text-gray-600'}`}>
-                {useAgentMode ? 'Agent AI' : 'Traditional ML'}
-              </span>
-            </div>
           </div>
         </div>
       </header>
@@ -688,7 +592,7 @@ const AgenticAIDashboard = () => {
                     Processing...
                   </>
                 ) : (
-                  'Run Agent'
+                  'Get Features'
                 )}
               </button>
             </div>
@@ -710,9 +614,9 @@ const AgenticAIDashboard = () => {
 
         <div className="space-y-6">
           <div className="bg-white rounded-lg shadow-md border p-4 md:p-6">
-            <h2 className="text-lg font-semibold mb-4">Agent Activity</h2>
+            <h2 className="text-lg font-semibold mb-4">Feature Store Activity</h2>
             <div className="space-y-3 max-h-96 overflow-y-auto">
-              {agentHistory.map((action, index) => (
+              {actionHistory.map((action, index) => (
                 <div key={index} className="border-b pb-2 last:border-b-0">
                   <div className="text-xs text-gray-500">
                     {formatTimestamp(action.timestamp)}
@@ -730,8 +634,8 @@ const AgenticAIDashboard = () => {
                   <div className="text-sm text-gray-600">{action.description}</div>
                 </div>
               ))}
-              {agentHistory.length === 0 && (
-                <div className="text-gray-500 text-center py-4">No agent activity yet</div>
+              {actionHistory.length === 0 && (
+                <div className="text-gray-500 text-center py-4">No feature store activity yet</div>
               )}
             </div>
           </div>
@@ -771,4 +675,4 @@ const AgenticAIDashboard = () => {
   );
 };
 
-export default AgenticAIDashboard;
+export default FeatureStoreDashboard;
