@@ -6,7 +6,8 @@ import ReactFlow, {
   useNodesState,
   useEdgesState,
   addEdge,
-  Position
+  Position,
+  MarkerType
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -164,12 +165,84 @@ const ProcessingFlowDiagram = ({ isAgentMode, activeTab }) => {
       
       // Connect the nodes with edges
       flowEdges = [
-        { id: 'e1-2', source: '1', target: '2', animated: true },
-        { id: 'e2-3', source: '2', target: '3', animated: true },
-        { id: 'e3-4', source: '3', target: '4', animated: true },
-        { id: 'e4-5', source: '4', target: '5', animated: true },
-        { id: 'e5-6', source: '5', target: '6', animated: true },
-        { id: 'e6-7', source: '6', target: '7', animated: true },
+        { 
+          id: 'e1-2', 
+          source: '1', 
+          target: '2', 
+          animated: true,
+          style: { stroke: '#2684ff', strokeWidth: 2 },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: '#2684ff',
+            width: 20,
+            height: 20,
+          }
+        },
+        { 
+          id: 'e2-3', 
+          source: '2', 
+          target: '3', 
+          animated: true,
+          style: { stroke: '#2684ff', strokeWidth: 2 },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: '#2684ff',
+            width: 20,
+            height: 20,
+          }
+        },
+        { 
+          id: 'e3-4', 
+          source: '3', 
+          target: '4', 
+          animated: true,
+          style: { stroke: '#2684ff', strokeWidth: 2 },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: '#2684ff',
+            width: 20,
+            height: 20,
+          }
+        },
+        { 
+          id: 'e4-5', 
+          source: '4', 
+          target: '5', 
+          animated: true,
+          style: { stroke: '#2684ff', strokeWidth: 2 },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: '#2684ff',
+            width: 20,
+            height: 20,
+          }
+        },
+        { 
+          id: 'e5-6', 
+          source: '5', 
+          target: '6', 
+          animated: true,
+          style: { stroke: '#2684ff', strokeWidth: 2 },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: '#2684ff',
+            width: 20,
+            height: 20,
+          }
+        },
+        { 
+          id: 'e6-7', 
+          source: '6', 
+          target: '7', 
+          animated: true,
+          style: { stroke: '#2684ff', strokeWidth: 2 },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: '#2684ff',
+            width: 20,
+            height: 20,
+          }
+        },
       ];
     } else {
       // Traditional mode flow (simpler)
@@ -225,9 +298,45 @@ const ProcessingFlowDiagram = ({ isAgentMode, activeTab }) => {
       
       // Connect the nodes with edges
       flowEdges = [
-        { id: 'e1-2', source: '1', target: '2', animated: true },
-        { id: 'e2-3', source: '2', target: '3', animated: true },
-        { id: 'e3-4', source: '3', target: '4', animated: true },
+        { 
+          id: 'e1-2', 
+          source: '1', 
+          target: '2', 
+          animated: true,
+          style: { stroke: '#666', strokeWidth: 2 },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: '#666',
+            width: 20,
+            height: 20,
+          }
+        },
+        { 
+          id: 'e2-3', 
+          source: '2', 
+          target: '3', 
+          animated: true,
+          style: { stroke: '#666', strokeWidth: 2 },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: '#666',
+            width: 20,
+            height: 20,
+          }
+        },
+        { 
+          id: 'e3-4', 
+          source: '3', 
+          target: '4', 
+          animated: true,
+          style: { stroke: '#666', strokeWidth: 2 },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: '#666',
+            width: 20,
+            height: 20,
+          }
+        },
       ];
     }
     
@@ -260,15 +369,19 @@ const ProcessingFlowDiagram = ({ isAgentMode, activeTab }) => {
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
         nodeTypes={nodeTypes}
         fitView
         attributionPosition="bottom-left"
+        // Disable node dragging, selection and other interactions
+        nodesDraggable={false}
+        nodesConnectable={false}
+        elementsSelectable={false}
+        zoomOnScroll={false}
+        panOnScroll={false}
+        panOnDrag={false}
+        zoomOnDoubleClick={false}
       >
-        <Controls />
-        <MiniMap />
         <Background variant="dots" gap={12} size={1} />
       </ReactFlow>
     </div>
