@@ -117,6 +117,7 @@ const FeatureStoreDashboard = () => {
   const toggleAgentMode = async () => {
     setLoading(true);
     setError(null);
+    setResult(null); // Clear previous results when switching modes
     
     try {
       if (apiConnected) {
@@ -125,6 +126,7 @@ const FeatureStoreDashboard = () => {
         });
         
         if (response.data && 'use_agent' in response.data) {
+          console.log("Mode switched to:", response.data.use_agent ? "AI Agent" : "Traditional");
           setUseAgentMode(response.data.use_agent);
           
           // Refresh history to show the mode change
@@ -139,13 +141,15 @@ const FeatureStoreDashboard = () => {
         }
       } else {
         // Mock mode toggle in demo mode
-        setUseAgentMode(!useAgentMode);
+        const newMode = !useAgentMode;
+        console.log("Mock mode switched to:", newMode ? "AI Agent" : "Traditional");
+        setUseAgentMode(newMode);
         
         // Add mock history entry
         const newAction = {
           timestamp: new Date().toISOString(),
           action: "toggle_mode",
-          description: `Switched to ${!useAgentMode ? "AI Agent" : "Traditional"} Mode`,
+          description: `Switched to ${newMode ? "AI Agent" : "Traditional"} Mode`,
           status: "success"
         };
         setActionHistory([newAction, ...actionHistory]);
@@ -221,7 +225,9 @@ const FeatureStoreDashboard = () => {
 
   const mockApiResponse = (activeTab) => {
     setTimeout(() => {
+      // Make sure we use the current agent mode setting
       const isAgentMode = useAgentMode;
+      console.log("Mock API response using agent mode:", isAgentMode);
       
       if (activeTab === 'recommendation') {
         const recommendations = [];
@@ -414,7 +420,9 @@ const FeatureStoreDashboard = () => {
   const renderResultContent = () => {
     if (!result || !result.data) return null;
 
+    // Explicitly check for AI insights to determine mode
     const isAgentMode = result.data.ai_insights !== undefined;
+    console.log("Rendering result with AI mode:", isAgentMode, "Result data:", result.data);
 
     switch (activeTab) {
       case 'recommendation':

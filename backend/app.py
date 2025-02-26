@@ -626,7 +626,7 @@ class AgenticFeatureStore:
                 "relevance_score": relevance_score
             }
             
-            if self.use_agent and enhanced_response:
+            if self.use_agent:
                 # Add AI-generated reasoning when using agent mode
                 reasoning_phrases = [
                     f"Based on the customer's {online_features['values'][0].get('customer_features:age')} age, this product would appeal to their demographic",
@@ -649,7 +649,7 @@ class AgenticFeatureStore:
             "recommendations": recommendations
         }
         
-        if self.use_agent and enhanced_response:
+        if self.use_agent:
             response_data["ai_insights"] = {
                 "analysis": "The customer profile indicates preferences for technology products with specific price sensitivity.",
                 "confidence": round(np.random.uniform(0.85, 0.99), 2),
@@ -717,7 +717,7 @@ class AgenticFeatureStore:
         }
         
         # Add AI insights if using agent mode
-        if self.use_agent and enhanced_response:
+        if self.use_agent:
             response_data["ai_insights"] = {
                 "analysis": "The transaction exhibits several patterns that are consistent with known fraud indicators.",
                 "confidence": round(np.random.uniform(0.7, 0.95), 2),
@@ -852,7 +852,7 @@ class AgenticFeatureStore:
         }
         
         # Add AI insights when using agent mode
-        if self.use_agent and enhanced_response:
+        if self.use_agent:
             response_data["ai_insights"] = {
                 "analysis": f"The customer falls into the {segment} segment with potential for growth.",
                 "confidence": round(np.random.uniform(0.8, 0.98), 2),
