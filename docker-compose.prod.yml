@@ -1,23 +1,22 @@
+version: '3'
+
 services:
   ollama:
     image: ollama/ollama:latest
     ports:
       - "11434:11434"
     volumes:
-      - ollama:/root/.ollama
+      - ollama-data:/root/.ollama
     networks:
       - agentic-ai-network
+    restart: unless-stopped
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: feast-agentic-backend:flow-diagram
     ports:
       - "8000:8000"
-    volumes:
-      - ./backend:/app
     environment:
-      - ENVIRONMENT=development
+      - ENVIRONMENT=production
       - OLLAMA_HOST=http://ollama:11434
     depends_on:
       - ollama
@@ -32,17 +31,12 @@ services:
       start_period: 10s
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: feast-agentic-frontend:flow-diagram
     ports:
       - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
     environment:
       - REACT_APP_API_URL=http://localhost:8000
-      - NODE_ENV=development
+      - NODE_ENV=production
     depends_on:
       - backend
     restart: unless-stopped
@@ -54,7 +48,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
-    # Add command to install reactflow package during container startup
+    # Install reactflow during startup
     command: >
       sh -c "npm install reactflow && npm start"
 
@@ -63,4 +57,4 @@ networks:
     driver: bridge
 
 volumes:
-  ollama:
+  ollama-data:
