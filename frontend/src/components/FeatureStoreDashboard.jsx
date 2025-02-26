@@ -899,7 +899,89 @@ const FeatureStoreDashboard = () => {
 
             {result && (
               <div className="mt-4 border-t pt-4">
-                <h3 className="text-lg font-medium mb-4">Results</h3>
+                <div className="flex justify-between items-center mb-4">
+                  <div className="flex items-center">
+                    <h3 className="text-lg font-medium">Results</h3>
+                    <div className={`ml-3 px-3 py-1 text-xs font-medium rounded-full ${
+                      result.data.ai_insights ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {result.data.ai_insights ? 'AI Agent Mode' : 'Traditional Mode'}
+                    </div>
+                  </div>
+                  
+                  {/* Processing details toggle */}
+                  <div className="flex items-center text-sm text-blue-600 cursor-pointer group" 
+                       onClick={() => document.getElementById('processing-details').classList.toggle('hidden')}>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="group-hover:underline">Processing Details</span>
+                  </div>
+                </div>
+                
+                {/* Processing details panel */}
+                <div id="processing-details" className="mb-4 p-4 bg-gray-50 rounded-lg border hidden">
+                  <h4 className="font-medium mb-2">
+                    {result.data.ai_insights ? 'AI Agent Processing Steps' : 'Traditional Processing Steps'}
+                  </h4>
+                  
+                  {result.data.ai_insights ? (
+                    <div className="text-sm">
+                      <ol className="list-decimal pl-5 space-y-2">
+                        <li className="text-blue-800">
+                          <span className="font-medium">Natural Language Query Generation</span>
+                          <p className="text-gray-700 pl-2">Created a query to retrieve and analyze features for {activeTab} task</p>
+                        </li>
+                        <li className="text-blue-800">
+                          <span className="font-medium">Feature Service Selection</span>
+                          <p className="text-gray-700 pl-2">Identified appropriate feature service for {activeTab} task</p>
+                        </li>
+                        <li className="text-blue-800">
+                          <span className="font-medium">Feature Retrieval</span>
+                          <p className="text-gray-700 pl-2">Retrieved relevant features from feature store using entity ID</p>
+                        </li>
+                        <li className="text-blue-800">
+                          <span className="font-medium">AI Feature Analysis</span>
+                          <p className="text-gray-700 pl-2">Analyzed feature relationships and patterns using LLM reasoning</p>
+                        </li>
+                        <li className="text-blue-800">
+                          <span className="font-medium">Feature Importance Calculation</span>
+                          <p className="text-gray-700 pl-2">Determined importance of each feature in the analysis</p>
+                        </li>
+                        <li className="text-blue-800">
+                          <span className="font-medium">Enhanced Insight Generation</span>
+                          <p className="text-gray-700 pl-2">Generated detailed insights and confidence metrics</p>
+                        </li>
+                        <li className="text-blue-800">
+                          <span className="font-medium">Response Organization</span>
+                          <p className="text-gray-700 pl-2">Structured results with AI reasoning and explanations</p>
+                        </li>
+                      </ol>
+                    </div>
+                  ) : (
+                    <div className="text-sm">
+                      <ol className="list-decimal pl-5 space-y-2">
+                        <li className="text-gray-800">
+                          <span className="font-medium">Feature Service Selection</span>
+                          <p className="text-gray-700 pl-2">Identified appropriate feature service for {activeTab} task</p>
+                        </li>
+                        <li className="text-gray-800">
+                          <span className="font-medium">Feature Retrieval</span>
+                          <p className="text-gray-700 pl-2">Retrieved features directly from feature store using entity ID</p>
+                        </li>
+                        <li className="text-gray-800">
+                          <span className="font-medium">Data Processing</span>
+                          <p className="text-gray-700 pl-2">Applied predefined business logic to process features</p>
+                        </li>
+                        <li className="text-gray-800">
+                          <span className="font-medium">Result Generation</span>
+                          <p className="text-gray-700 pl-2">Generated standardized results based on feature values</p>
+                        </li>
+                      </ol>
+                    </div>
+                  )}
+                </div>
+                
                 {renderResultContent()}
               </div>
             )}
@@ -910,24 +992,72 @@ const FeatureStoreDashboard = () => {
           <div className="bg-white rounded-lg shadow-md border p-4 md:p-6">
             <h2 className="text-lg font-semibold mb-4">Feature Store Activity</h2>
             <div className="space-y-3 max-h-96 overflow-y-auto">
-              {actionHistory.map((action, index) => (
-                <div key={index} className="border-b pb-2 last:border-b-0">
-                  <div className="text-xs text-gray-500">
-                    {formatTimestamp(action.timestamp)}
+              {actionHistory.map((action, index) => {
+                // Check if the action is related to the current result
+                const isCurrentAction = result && 
+                  ((activeTab === 'recommendation' && action.action.includes('recommendation')) ||
+                   (activeTab === 'fraud' && action.action.includes('fraud')) ||
+                   (activeTab === 'segmentation' && action.action.includes('segmentation')));
+                
+                // Determine if it's an agent or traditional mode action
+                const isAgentMode = action.description && action.description.includes('Agent Mode');
+                const isTraditionalMode = action.description && action.description.includes('Traditional Mode');
+                
+                return (
+                  <div 
+                    key={index} 
+                    className={`border-b pb-2 last:border-b-0 ${isCurrentAction ? 'bg-blue-50' : ''}`}
+                  >
+                    <div className="text-xs text-gray-500 flex justify-between">
+                      <span>{formatTimestamp(action.timestamp)}</span>
+                      {(isAgentMode || isTraditionalMode) && (
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${
+                          isAgentMode ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {isAgentMode ? 'AI Agent' : 'Traditional'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="font-medium flex items-center">
+                      {action.action}
+                      <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
+                        action.status === 'success' ? 'bg-green-100 text-green-800' :
+                        action.status === 'error' ? 'bg-red-100 text-red-800' :
+                        'bg-blue-100 text-blue-800'
+                      }`}>
+                        {action.status}
+                      </span>
+                    </div>
+                    <div className="text-sm text-gray-600">{action.description}</div>
+                    
+                    {/* Show activity steps for current action */}
+                    {isCurrentAction && isAgentMode && (
+                      <div className="mt-2 text-xs text-gray-600 border-t border-blue-100 pt-2">
+                        <div className="font-medium text-blue-700 mb-1">Steps:</div>
+                        <ol className="list-decimal pl-5 space-y-1">
+                          <li>Natural language query created to analyze features</li>
+                          <li>Feature service identified and features retrieved from feature store</li>
+                          <li>LLM analysis performed on retrieved features</li>
+                          <li>Feature importance calculated through AI reasoning</li>
+                          <li>Insights generated based on feature relationships</li>
+                          <li>Results processed with confidence metrics</li>
+                        </ol>
+                      </div>
+                    )}
+                    {isCurrentAction && isTraditionalMode && (
+                      <div className="mt-2 text-xs text-gray-600 border-t border-gray-100 pt-2">
+                        <div className="font-medium text-gray-700 mb-1">Steps:</div>
+                        <ol className="list-decimal pl-5 space-y-1">
+                          <li>Feature service identified for requested task</li>
+                          <li>Features retrieved directly from feature store</li>
+                          <li>Predefined business logic applied to features</li>
+                          <li>Results calculated using standard algorithms</li>
+                        </ol>
+                      </div>
+                    )}
                   </div>
-                  <div className="font-medium flex items-center">
-                    {action.action}
-                    <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
-                      action.status === 'success' ? 'bg-green-100 text-green-800' :
-                      action.status === 'error' ? 'bg-red-100 text-red-800' :
-                      'bg-blue-100 text-blue-800'
-                    }`}>
-                      {action.status}
-                    </span>
-                  </div>
-                  <div className="text-sm text-gray-600">{action.description}</div>
-                </div>
-              ))}
+                );
+              })}
               {actionHistory.length === 0 && (
                 <div className="text-gray-500 text-center py-4">No feature store activity yet</div>
               )}

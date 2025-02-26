@@ -310,41 +310,105 @@ class AgenticFeatureStore:
         try:
             # If agent mode is disabled or agent not initialized, use direct function calls
             if not self.use_agent or not hasattr(self, 'agent'):
+                # Log the start of traditional mode processing
+                self.add_to_history(
+                    action_type="process_start", 
+                    description=f"Starting feature processing for {request.action_type} in Traditional Mode"
+                )
+                
                 # Use direct function calls for traditional, non-agent mode
                 if request.action_type == "recommendation":
+                    # Log feature retrieval
+                    self.add_to_history(
+                        action_type="feature_retrieval", 
+                        description=f"Retrieving features from feature store for customer {request.entity_id}"
+                    )
+                    
                     result = self._handle_recommendation({"customer_id": request.entity_id})
+                    
+                    # Log completion
                     self.add_to_history(
                         action_type="get_recommendation_features", 
-                        description=f"Retrieved features for customer {request.entity_id} (Traditional Mode)"
+                        description=f"Retrieved features and processed recommendations for customer {request.entity_id} (Traditional Mode)"
                     )
                     return result
+                
                 elif request.action_type == "fraud_detection":
+                    # Log feature retrieval
+                    self.add_to_history(
+                        action_type="feature_retrieval", 
+                        description=f"Retrieving transaction features from feature store for transaction {request.entity_id}"
+                    )
+                    
                     result = self._handle_fraud_detection({"transaction_id": request.entity_id})
+                    
+                    # Log completion
                     self.add_to_history(
                         action_type="get_fraud_detection_features", 
-                        description=f"Retrieved features for transaction {request.entity_id} (Traditional Mode)"
+                        description=f"Retrieved features and analyzed fraud for transaction {request.entity_id} (Traditional Mode)"
                     )
                     return result
+                
                 elif request.action_type == "segmentation":
+                    # Log feature retrieval
+                    self.add_to_history(
+                        action_type="feature_retrieval", 
+                        description=f"Retrieving customer features from feature store for customer {request.entity_id}"
+                    )
+                    
                     result = self._handle_customer_segmentation({"customer_id": request.entity_id})
+                    
+                    # Log completion
                     self.add_to_history(
                         action_type="get_segmentation_features", 
-                        description=f"Retrieved features for customer {request.entity_id} (Traditional Mode)"
+                        description=f"Retrieved features and segmented customer {request.entity_id} (Traditional Mode)"
                     )
                     return result
                 else:
                     raise ValueError(f"Unsupported action type: {request.action_type}")
             
+            # Log the start of agent mode processing
+            self.add_to_history(
+                action_type="process_start", 
+                description=f"Starting agentic feature processing for {request.action_type}"
+            )
+            
             # Agent mode: Convert the request into a natural language query
             query = self._create_agent_query(request)
             
+            # Log query creation
+            self.add_to_history(
+                action_type="query_creation", 
+                description=f"Created natural language query for the agent: '{query}' (Agent Mode)"
+            )
+            
             try:
+                # Log agent invocation
+                self.add_to_history(
+                    action_type="agent_invoke", 
+                    description=f"Invoking AI agent to analyze feature data (Agent Mode)"
+                )
+                
                 # Run the agent with async invoke
                 agent_response = await self.agent.ainvoke({"input": query})
                 if isinstance(agent_response, dict) and "output" in agent_response:
                     agent_response = agent_response["output"]
+                
+                # Log agent response
+                self.add_to_history(
+                    action_type="agent_response", 
+                    description=f"Received AI agent analysis for feature data (Agent Mode)"
+                )
+                
             except Exception as llm_error:
                 print(f"LLM error: {str(llm_error)}")
+                
+                # Log fallback
+                self.add_to_history(
+                    action_type="agent_fallback", 
+                    description=f"AI agent unavailable, falling back to traditional processing: {str(llm_error)}"
+                )
+                
                 # Fall back to direct function calls if LLM fails
                 if request.action_type == "recommendation":
                     result = self._handle_recommendation({"customer_id": request.entity_id})
@@ -370,13 +434,19 @@ class AgenticFeatureStore:
                 else:
                     raise ValueError(f"Unsupported action type: {request.action_type}")
             
+            # Log response processing
+            self.add_to_history(
+                action_type="process_response", 
+                description=f"Processing AI response and generating insights (Agent Mode)"
+            )
+            
             # Process the agent's response
             response = self._process_agent_response(request, agent_response)
             
             # Add successful action to history
             self.add_to_history(
                 action_type=f"get_{request.action_type}_features",
-                description=f"Retrieved features for {request.entity_id} (Agent Mode)"
+                description=f"Successfully retrieved features and generated AI insights for {request.entity_id} (Agent Mode)"
             )
             
             return response
