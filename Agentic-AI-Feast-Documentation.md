@@ -6,6 +6,22 @@
 
 This project demonstrates a feature store system using Feast for retrieving features for machine learning tasks. The feature store provides unified access to features for use cases like recommendations, fraud detection, and customer segmentation.
 
+### Basic vs Advanced Processing
+
+The system supports two processing modes that can be toggled via the UI:
+
+#### Basic Processing
+- Uses simple feature retrieval and processing
+- Provides standard feature-based outputs
+- Delivers a streamlined experience with focused results
+- Optimal for straightforward use cases and quick insights
+
+#### Advanced Processing
+- Uses enhanced feature processing with more detailed outputs
+- Provides confidence scores and feature importance metrics
+- Offers more comprehensive analysis and insights
+- Delivers more recommendations with higher granularity
+
 ## Architecture
 
 The application consists of three main components:

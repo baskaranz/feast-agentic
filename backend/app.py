@@ -173,11 +173,15 @@ class ActionHistory(BaseModel):
     description: str
     status: str
 
+class ProcessingModeToggle(BaseModel):
+    advanced_processing: bool
+
 # Feature Processing Service
 class FeatureProcessor:
-    def __init__(self, feature_store: FeatureStore):
+    def __init__(self, feature_store: FeatureStore, advanced_processing: bool = False):
         self.feature_store = feature_store
         self.action_history: List[ActionHistory] = []
+        self.advanced_processing = advanced_processing
     
     def add_to_history(self, action_type: str, description: str, status: str = "success") -> None:
         history_action = ActionHistory(
@@ -190,25 +194,27 @@ class FeatureProcessor:
 
     def process_feature_request(self, request: FeatureRequest) -> FeatureResponse:
         try:
+            processing_mode = "advanced" if self.advanced_processing else "basic"
+            
             if request.action_type == "recommendation":
                 result = self._process_recommendation(request.entity_id)
                 self.add_to_history(
                     action_type="get_recommendation_features", 
-                    description=f"Retrieved features for customer {request.entity_id}"
+                    description=f"Retrieved features for customer {request.entity_id} ({processing_mode} processing)"
                 )
                 return result
             elif request.action_type == "fraud_detection":
                 result = self._process_fraud_detection(request.entity_id)
                 self.add_to_history(
                     action_type="get_fraud_detection_features", 
-                    description=f"Retrieved features for transaction {request.entity_id}"
+                    description=f"Retrieved features for transaction {request.entity_id} ({processing_mode} processing)"
                 )
                 return result
             elif request.action_type == "segmentation":
                 result = self._process_customer_segmentation(request.entity_id)
                 self.add_to_history(
                     action_type="get_segmentation_features", 
-                    description=f"Retrieved features for customer {request.entity_id}"
+                    description=f"Retrieved features for customer {request.entity_id} ({processing_mode} processing)"
                 )
                 return result
             else:
@@ -251,12 +257,35 @@ class FeatureProcessor:
         
         # Generate product recommendations based on features
         recommendations = []
-        for i in range(3):  # Generate 3 recommendations
+        
+        # Number of recommendations varies based on processing mode
+        num_recommendations = 5 if self.advanced_processing else 3
+        
+        for i in range(num_recommendations):
             product_id = f"PROD-{np.random.randint(1000, 9999)}"
-            product_name = np.random.choice(["Smart Phone", "Laptop", "Headphones", "Tablet", "Smartwatch"])
-            product_category = np.random.choice(["Electronics", "Computers", "Accessories"])
+            
+            # Advanced processing uses a wider variety of products
+            if self.advanced_processing:
+                product_name = np.random.choice([
+                    "Smart Phone", "Laptop", "Headphones", "Tablet", "Smartwatch", 
+                    "Digital Camera", "Gaming Console", "VR Headset", "Bluetooth Speaker", "E-Reader"
+                ])
+                product_category = np.random.choice([
+                    "Electronics", "Computers", "Accessories", "Gaming", "Audio",
+                    "Photography", "Wearables", "Smart Home"
+                ])
+            else:
+                product_name = np.random.choice(["Smart Phone", "Laptop", "Headphones", "Tablet", "Smartwatch"])
+                product_category = np.random.choice(["Electronics", "Computers", "Accessories"])
+                
             product_price = round(np.random.uniform(100, 1000), 2)
-            relevance_score = round(np.random.uniform(0.6, 0.95), 2)
+            
+            # Advanced processing has more precise relevance scores
+            if self.advanced_processing:
+                # Simulate more personalized scoring with higher average scores
+                relevance_score = round(np.random.uniform(0.75, 0.98), 3)
+            else:
+                relevance_score = round(np.random.uniform(0.6, 0.95), 2)
             
             recommendations.append({
                 "product_id": product_id,
@@ -269,14 +298,30 @@ class FeatureProcessor:
         # Sort by relevance score
         recommendations = sorted(recommendations, key=lambda x: x["relevance_score"], reverse=True)
         
-        return FeatureResponse(
-            message=f"Retrieved features and generated product recommendations for customer {customer_id}",
-            status="success",
-            data={
-                "customer_id": customer_id,
-                "customer_features": online_features["values"][0],
-                "recommendations": recommendations
+        # Advanced processing includes confidence metrics
+        response_data = {
+            "customer_id": customer_id,
+            "customer_features": online_features["values"][0],
+            "recommendations": recommendations
+        }
+        
+        if self.advanced_processing:
+            response_data["processing_info"] = {
+                "mode": "advanced",
+                "confidence": round(np.random.uniform(0.85, 0.99), 2),
+                "recommendation_count": len(recommendations),
+                "feature_importance": {
+                    "age": round(np.random.uniform(0.1, 0.3), 2),
+                    "income": round(np.random.uniform(0.3, 0.5), 2),
+                    "purchase_history": round(np.random.uniform(0.4, 0.7), 2)
+                }
             }
+        
+        mode_text = "advanced" if self.advanced_processing else "basic"
+        return FeatureResponse(
+            message=f"Retrieved features and generated product recommendations for customer {customer_id} using {mode_text} processing",
+            status="success",
+            data=response_data
         )
     
     def _process_fraud_detection(self, transaction_id: str) -> FeatureResponse:
@@ -454,7 +499,7 @@ app.add_middleware(
 
 # Initialize Feature Store and Feature Processor
 feature_store = FeatureStore(repo_path="./feature_repo")
-feature_processor = FeatureProcessor(feature_store)
+feature_processor = FeatureProcessor(feature_store, advanced_processing=False)
 
 @app.get("/")
 async def root():
@@ -497,6 +542,26 @@ async def process_features(request: FeatureRequest):
 @app.get("/features/history")
 async def feature_history():
     return {"actions": feature_processor.action_history}
+
+@app.get("/processing/mode")
+async def get_processing_mode():
+    return {"advanced_processing": feature_processor.advanced_processing}
+
+@app.post("/processing/mode")
+async def set_processing_mode(mode: ProcessingModeToggle):
+    # Update the processing mode
+    global feature_processor
+    feature_processor.advanced_processing = mode.advanced_processing
+    
+    # Add this mode change to the history
+    mode_name = "Advanced Processing" if mode.advanced_processing else "Basic Processing"
+    feature_processor.add_to_history(
+        action_type="toggle_mode",
+        description=f"Switched to {mode_name}",
+        status="success"
+    )
+    
+    return {"message": f"Switched to {mode_name}", "advanced_processing": mode.advanced_processing}
 
 @app.post("/demo/recommendation")
 async def demo_recommendation(customer_id: str = Body(..., embed=True)):

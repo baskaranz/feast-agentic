@@ -15,6 +15,7 @@ const FeatureStoreDashboard = () => {
   const [featureServices, setFeatureServices] = useState([]);
   const [error, setError] = useState(null);
   const [apiConnected, setApiConnected] = useState(true);
+  const [advancedProcessing, setAdvancedProcessing] = useState(false);
 
   useEffect(() => {
     // Fetch feature views and services when component mounts
@@ -65,12 +66,21 @@ const FeatureStoreDashboard = () => {
       setFeatureViews(viewsResponse.data.feature_views);
       setFeatureServices(servicesResponse.data.feature_services);
       
-      // Fetch feature history
+      // Fetch feature history and processing mode
       try {
-        const historyResponse = await axios.get(`${API_URL}/features/history`);
+        const [historyResponse, modeResponse] = await Promise.all([
+          axios.get(`${API_URL}/features/history`),
+          axios.get(`${API_URL}/processing/mode`)
+        ]);
+        
         setActionHistory(historyResponse.data.actions || []);
+        
+        // Set the processing mode if available
+        if (modeResponse.data && 'advanced_processing' in modeResponse.data) {
+          setAdvancedProcessing(modeResponse.data.advanced_processing);
+        }
       } catch (err) {
-        console.warn("Could not fetch feature history, but other API calls succeeded:", err);
+        console.warn("Could not fetch feature history or processing mode, but other API calls succeeded:", err);
       }
     } catch (err) {
       console.error('Error fetching initial data:', err);
@@ -271,6 +281,9 @@ const FeatureStoreDashboard = () => {
     switch (activeTab) {
       case 'recommendation':
         const recommendations = result.data.recommendations || [];
+        const processingInfo = result.data.processing_info;
+        const hasAdvancedInfo = !!processingInfo;
+        
         return (
           <div className="space-y-4">
             <h3 className="text-lg font-medium">Customer Information</h3>
@@ -289,6 +302,36 @@ const FeatureStoreDashboard = () => {
               </div>
             </div>
 
+            {hasAdvancedInfo && (
+              <div className="mt-4 p-4 border rounded-lg bg-blue-50">
+                <h3 className="text-md font-medium mb-2">Advanced Processing Information</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-sm text-gray-600">Confidence</div>
+                    <div className="text-lg font-semibold">{(processingInfo.confidence * 100).toFixed(0)}%</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-gray-600">Recommendations</div>
+                    <div className="text-lg font-semibold">{processingInfo.recommendation_count}</div>
+                  </div>
+                </div>
+                
+                {processingInfo.feature_importance && (
+                  <div className="mt-3">
+                    <div className="text-sm text-gray-600 mb-1">Feature Importance</div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {Object.entries(processingInfo.feature_importance).map(([feature, value]) => (
+                        <div key={feature} className="bg-white p-2 rounded">
+                          <div className="text-xs text-gray-500">{feature}</div>
+                          <div className="font-medium">{(value * 100).toFixed(0)}%</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <h3 className="text-lg font-medium mt-6">Recommendations</h3>
             <div className="space-y-4">
               {recommendations.map((rec, index) => (
@@ -302,7 +345,7 @@ const FeatureStoreDashboard = () => {
                   <div className="flex items-center">
                     <div className="text-sm mr-2">Relevance Score:</div>
                     <div className="text-lg font-bold text-green-600">
-                      {((rec?.relevance_score || 0) * 100).toFixed(0)}%
+                      {((rec?.relevance_score || 0) * 100).toFixed(hasAdvancedInfo ? 1 : 0)}%
                     </div>
                   </div>
                 </div>
@@ -328,7 +371,7 @@ const FeatureStoreDashboard = () => {
                     <XAxis dataKey="product_name" />
                     <YAxis label={{ value: 'Relevance Score (%)', angle: -90, position: 'insideLeft' }} />
                     <Tooltip 
-                      formatter={(value) => [`${((value || 0) * 100).toFixed(0)}%`, 'Relevance Score']}
+                      formatter={(value) => [`${((value || 0) * 100).toFixed(hasAdvancedInfo ? 1 : 0)}%`, 'Relevance Score']}
                       labelFormatter={(label) => `Product: ${label || 'Unknown'}`}
                     />
                     <Bar dataKey="relevance_score" fill="#8884d8" name="Relevance Score" />
@@ -501,6 +544,51 @@ const FeatureStoreDashboard = () => {
     }
   };
 
+  // Add toggle function for processing mode
+  const toggleProcessingMode = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      if (apiConnected) {
+        const response = await axios.post(`${API_URL}/processing/mode`, {
+          advanced_processing: !advancedProcessing
+        });
+        
+        if (response.data && 'advanced_processing' in response.data) {
+          setAdvancedProcessing(response.data.advanced_processing);
+          
+          // Refresh history to show the mode change
+          try {
+            const historyResponse = await axios.get(`${API_URL}/features/history`);
+            if (historyResponse.data && historyResponse.data.actions) {
+              setActionHistory(historyResponse.data.actions);
+            }
+          } catch (err) {
+            console.warn("Could not refresh history after mode change");
+          }
+        }
+      } else {
+        // Mock mode toggle in demo mode
+        setAdvancedProcessing(!advancedProcessing);
+        
+        // Add mock history entry
+        const newAction = {
+          timestamp: new Date().toISOString(),
+          action: "toggle_mode",
+          description: `Switched to ${!advancedProcessing ? "Advanced" : "Basic"} Processing Mode`,
+          status: "success"
+        };
+        setActionHistory([newAction, ...actionHistory]);
+      }
+    } catch (err) {
+      console.error('Error toggling processing mode:', err);
+      setError('Failed to toggle processing mode');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto p-4 md:p-6">
       <header className="mb-8">
@@ -515,6 +603,33 @@ const FeatureStoreDashboard = () => {
                 ⚠️ Backend API not detected. Running in demo mode with mock data.
               </div>
             )}
+          </div>
+          
+          <div className="mt-4 md:mt-0 bg-white px-4 py-2 rounded-lg shadow border flex items-center">
+            <div className="mr-3">
+              <span className="font-semibold">Processing Mode:</span>
+            </div>
+            <div 
+              className="relative inline-block w-12 h-6 transition duration-200 ease-in-out rounded-full cursor-pointer"
+              onClick={toggleProcessingMode}
+            >
+              <label
+                className={`absolute left-0 w-12 h-6 transition duration-200 ease-in-out rounded-full ${
+                  advancedProcessing ? 'bg-blue-500' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`absolute left-1 top-1 w-4 h-4 transition duration-200 ease-in-out rounded-full bg-white transform ${
+                    advancedProcessing ? 'translate-x-6' : 'translate-x-0'
+                  }`}
+                />
+              </label>
+            </div>
+            <div className="ml-3">
+              <span className={`text-sm font-medium ${advancedProcessing ? 'text-blue-600' : 'text-gray-600'}`}>
+                {advancedProcessing ? 'Advanced' : 'Basic'}
+              </span>
+            </div>
           </div>
         </div>
       </header>
