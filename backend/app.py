@@ -850,6 +850,78 @@ class AgenticFeatureStore:
                 description=f"Starting agentic feature processing for {request.action_type}"
             )
             
+            # NEW: AUTONOMOUS FEATURE ENGINEERING SECTION
+            # First, check if we need to create a custom feature service for this use case
+            custom_service_name = f"agentic_{request.action_type}_service"
+            
+            # If we don't have a custom service for this use case yet, create one
+            if custom_service_name not in self.custom_feature_services:
+                self.add_to_history(
+                    action_type="feature_engineering", 
+                    description=f"Automatically creating feature service for {request.action_type} use case"
+                )
+                
+                # Determine entity type based on action type
+                entity_type = "customer" if request.action_type in ["recommendation", "segmentation"] else "transaction"
+                
+                try:
+                    # Analyze available data sources for suitable features
+                    for csv_file in ["customer_features.csv", "product_features.csv", "transaction_features.csv"]:
+                        analysis_result = self._tool_analyze_data_source(json.dumps({
+                            "data_source": csv_file,
+                            "entity_type": entity_type
+                        }))
+                        
+                        # Log data source analysis
+                        self.add_to_history(
+                            action_type="data_source_analysis", 
+                            description=f"Analyzed data source {csv_file} for relevant features"
+                        )
+                        
+                    # Get feature suggestions for this use case
+                    suggestion_result = self._tool_suggest_features_for_use_case(json.dumps({
+                        "use_case": request.action_type,
+                        "entity_type": entity_type
+                    }))
+                    
+                    # Log feature suggestion
+                    self.add_to_history(
+                        action_type="feature_suggestion", 
+                        description=f"Generated feature suggestions for {request.action_type} use case"
+                    )
+                    
+                    # Parse suggestions
+                    try:
+                        suggestion_data = json.loads(suggestion_result)
+                        recommended_features = suggestion_data.get("recommended_features", [])
+                        
+                        # Create custom feature service
+                        service_result = self._tool_create_feature_service(json.dumps({
+                            "name": custom_service_name,
+                            "features": recommended_features,
+                            "description": f"AI-generated feature service for {request.action_type}",
+                            "use_case": request.action_type
+                        }))
+                        
+                        # Log feature service creation
+                        self.add_to_history(
+                            action_type="feature_service_creation", 
+                            description=f"Created custom feature service '{custom_service_name}' with {len(recommended_features)} features"
+                        )
+                    except Exception as parsing_error:
+                        print(f"Error parsing suggestions: {str(parsing_error)}")
+                        # Continue with default service if parsing fails
+                        pass
+                        
+                except Exception as engineering_error:
+                    print(f"Error in automatic feature engineering: {str(engineering_error)}")
+                    # Continue with default processing if feature engineering fails
+                    self.add_to_history(
+                        action_type="feature_engineering", 
+                        description=f"Automatic feature engineering failed: {str(engineering_error)}",
+                        status="error"
+                    )
+            
             # Agent mode: Convert the request into a natural language query
             query = self._create_agent_query(request)
             
@@ -939,14 +1011,22 @@ class AgenticFeatureStore:
 
     def _create_agent_query(self, request: FeatureRequest) -> str:
         """Convert a FeatureRequest into a natural language query for the LangChain agent"""
+        # Check if we have a custom feature service for this use case
+        custom_service_name = f"agentic_{request.action_type}_service"
+        service_info = ""
+        
+        if custom_service_name in self.custom_feature_services:
+            features = self.custom_feature_services[custom_service_name]["features"]
+            service_info = f" using the custom feature service '{custom_service_name}' with features: {', '.join(features)}"
+        
         if request.action_type == "recommendation":
-            return f"Retrieve features for customer {request.entity_id} from the feature store and provide product recommendations"
+            return f"Retrieve features for customer {request.entity_id} from the feature store{service_info} and provide product recommendations"
         elif request.action_type == "fraud_detection":
-            return f"Retrieve features for transaction {request.entity_id} from the feature store and analyze for potential fraud"
+            return f"Retrieve features for transaction {request.entity_id} from the feature store{service_info} and analyze for potential fraud"
         elif request.action_type == "segmentation":
-            return f"Retrieve features for customer {request.entity_id} from the feature store and provide customer segmentation"
+            return f"Retrieve features for customer {request.entity_id} from the feature store{service_info} and provide customer segmentation"
         else:
-            return f"Retrieve and process features for {request.action_type} with entity ID: {request.entity_id}"
+            return f"Retrieve and process features for {request.action_type} with entity ID: {request.entity_id}{service_info}"
 
     def _process_agent_response(self, request: FeatureRequest, agent_response: str) -> FeatureResponse:
         """Process the agent's response into a structured FeatureResponse"""
@@ -1371,9 +1451,30 @@ class AgenticFeatureStore:
                 data={}
             )
         
+        # Check if we have a custom agentic service for recommendations
+        custom_service_name = "agentic_recommendation_service"
+        use_custom_service = self.use_agent and custom_service_name in self.custom_feature_services
+        
         # Get feature service for recommendations
         try:
-            service = self.feature_store.get_feature_service("recommendation_service")
+            if use_custom_service:
+                # Use custom feature service created by the agent
+                self.add_to_history(
+                    action_type="service_selection",
+                    description=f"Using AI-generated feature service '{custom_service_name}'"
+                )
+                
+                # Create a simple service object with the features from custom service
+                service_features = self.custom_feature_services[custom_service_name]["features"]
+                
+                class CustomService:
+                    def get_features(self):
+                        return service_features
+                
+                service = CustomService()
+            else:
+                # Use standard feature service
+                service = self.feature_store.get_feature_service("recommendation_service")
         except ValueError as e:
             return FeatureResponse(
                 message=str(e),
@@ -1475,9 +1576,30 @@ class AgenticFeatureStore:
                 data={}
             )
         
+        # Check if we have a custom agentic service for fraud detection
+        custom_service_name = "agentic_fraud_detection_service"
+        use_custom_service = self.use_agent and custom_service_name in self.custom_feature_services
+        
         # Get feature service for fraud detection
         try:
-            service = self.feature_store.get_feature_service("fraud_detection_service")
+            if use_custom_service:
+                # Use custom feature service created by the agent
+                self.add_to_history(
+                    action_type="service_selection",
+                    description=f"Using AI-generated feature service '{custom_service_name}'"
+                )
+                
+                # Create a simple service object with the features from custom service
+                service_features = self.custom_feature_services[custom_service_name]["features"]
+                
+                class CustomService:
+                    def get_features(self):
+                        return service_features
+                
+                service = CustomService()
+            else:
+                # Use standard feature service
+                service = self.feature_store.get_feature_service("fraud_detection_service")
         except ValueError as e:
             return FeatureResponse(
                 message=str(e),
@@ -1548,9 +1670,30 @@ class AgenticFeatureStore:
                 data={}
             )
         
+        # Check if we have a custom agentic service for customer segmentation
+        custom_service_name = "agentic_segmentation_service"
+        use_custom_service = self.use_agent and custom_service_name in self.custom_feature_services
+        
         # Get feature service for customer segmentation
         try:
-            service = self.feature_store.get_feature_service("customer_segmentation_service")
+            if use_custom_service:
+                # Use custom feature service created by the agent
+                self.add_to_history(
+                    action_type="service_selection",
+                    description=f"Using AI-generated feature service '{custom_service_name}'"
+                )
+                
+                # Create a simple service object with the features from custom service
+                service_features = self.custom_feature_services[custom_service_name]["features"]
+                
+                class CustomService:
+                    def get_features(self):
+                        return service_features
+                
+                service = CustomService()
+            else:
+                # Use standard feature service
+                service = self.feature_store.get_feature_service("customer_segmentation_service")
         except ValueError as e:
             return FeatureResponse(
                 message=str(e),
