@@ -16,9 +16,10 @@ The system supports two processing modes that can be toggled via the UI:
 - Shows feature importance metrics and confidence scores
 - Generates enhanced insights and more nuanced recommendations
 - Offers explanations of how features influenced the outcomes
-- **Autonomously creates feature views and feature services**
-- **Analyzes data sources to identify potential features**
-- **Suggests relevant features for specific use cases**
+- **Automatically creates feature services when user clicks "Get Features"**
+- **Analyzes data sources to identify potential features for each use case**
+- **Autonomously selects the most relevant features for specific use cases**
+- **Creates optimal feature views and services without requiring explicit user action**
 
 #### Traditional Mode
 - Uses direct feature retrieval and processing without AI agent
@@ -61,11 +62,14 @@ Features are registered in the Feast feature store with appropriate metadata:
 
 ### 2. Autonomous Feature Engineering (Agentic Mode Only)
 
-In Agent Mode, the system can:
-1. **Analyze Data Sources**: Examine CSV files to identify potential features and entities
-2. **Create Feature Views**: Automatically create feature views based on data source analysis
-3. **Create Feature Services**: Build feature services tailored to specific use cases
-4. **Suggest Features**: Recommend the most relevant features for a given use case
+When a user clicks "Get Features" in Agent Mode, the system automatically:
+1. **Analyze Data Sources**: Examines CSV files to identify potential features for the use case
+2. **Generate Feature Suggestions**: Determines the most relevant features for the specific use case
+3. **Create Feature Service**: Builds a custom feature service tailored to the use case
+4. **Use Custom Service**: Retrieves features using the newly created service
+5. **Track Process**: Logs each step in the action history for transparency
+
+All of this happens automatically without requiring any additional user action beyond clicking "Get Features". The system creates a custom service named `agentic_{use_case}_service` and uses it for future requests of the same type.
 
 ### 3. Feature Retrieval
 
@@ -123,10 +127,11 @@ Results are structured as `FeatureResponse` objects containing:
 - No external dependencies
 
 ### Autonomous Feature Management
-- **Data Source Analysis**: Automatically analyze CSV files to identify features and entities
-- **Feature View Creation**: Create new feature views based on data source analysis
-- **Feature Service Creation**: Build feature services tailored to specific use cases
-- **Feature Suggestion**: Recommend the most relevant features for a given use case
+- **One-Click Feature Engineering**: Automatically creates feature services when user clicks "Get Features"
+- **Data Source Analysis**: Analyzes CSV files to identify the most relevant features for each use case
+- **Intelligent Feature Selection**: Selects optimal features based on the specific use case requirements
+- **Custom Service Creation**: Creates and uses custom feature services without explicit user action
+- **Transparent Process**: Logs each step of the autonomous process in the action history for visibility
 
 ## API Endpoints
 
@@ -197,9 +202,15 @@ ollama run mistral
 
 ### Adding New Data Sources
 1. Add new CSV files to the `backend/offline_store` directory
-2. Use the agent to analyze the data source (`POST /data-source/analyze`)
-3. Create a new feature view based on the analysis (`POST /feature-views/create`)
-4. Create a new feature service for your use case (`POST /feature-services/create`)
+2. Toggle AI Agent mode ON in the UI
+3. Select your use case and click "Get Features"
+4. The system will automatically analyze the new data source and create appropriate feature services
+
+You can also manually manage data sources and feature views using the API:
+1. Analyze a data source: `POST /data-source/analyze`
+2. Create a feature view: `POST /feature-views/create`
+3. Create a feature service: `POST /feature-services/create`
+4. Get feature suggestions: `POST /features/suggest`
 
 ### Connecting to Real Feast
 To connect to a real Feast instance:
