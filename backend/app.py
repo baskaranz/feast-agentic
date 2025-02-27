@@ -1,9 +1,11 @@
 import os
 import json
+import sqlite3
+import csv
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
 from dataclasses import dataclass
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,118 +23,484 @@ from langchain.prompts import PromptTemplate
 
 load_dotenv()
 
+# Configuration for offline and online stores
+OFFLINE_STORE_PATH = os.path.join(os.path.dirname(__file__), 'offline_store')
+SQLITE_DB_PATH = os.path.join(os.path.dirname(__file__), 'feature_store.db')
+
+# Create directories if they don't exist
+os.makedirs(OFFLINE_STORE_PATH, exist_ok=True)
+
+# Initialize SQLite database for online store
+def initialize_sqlite_db():
+    conn = sqlite3.connect(SQLITE_DB_PATH)
+    cursor = conn.cursor()
+    
+    # Create tables for each feature view
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS customer_features (
+        customer_id TEXT PRIMARY KEY,
+        age INTEGER,
+        income REAL,
+        credit_score INTEGER,
+        purchase_history INTEGER,
+        last_updated TIMESTAMP
+    )
+    ''')
+    
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS product_features (
+        product_id TEXT PRIMARY KEY,
+        price REAL,
+        category TEXT,
+        rating REAL,
+        inventory INTEGER,
+        last_updated TIMESTAMP
+    )
+    ''')
+    
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS transaction_features (
+        transaction_id TEXT PRIMARY KEY,
+        amount REAL,
+        timestamp TIMESTAMP,
+        location TEXT,
+        last_updated TIMESTAMP
+    )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    print("SQLite database initialized")
+
+# Generate synthetic data for offline store
+def generate_offline_data():
+    # Customer data
+    customers = []
+    for i in range(1000):
+        customer_id = f"CUST-{1000 + i}"
+        age = np.random.randint(18, 80)
+        income = np.random.randint(30000, 150000)
+        credit_score = np.random.randint(300, 850)
+        purchase_history = np.random.randint(0, 100)
+        customers.append([customer_id, age, income, credit_score, purchase_history])
+    
+    # Save to CSV
+    customer_file = os.path.join(OFFLINE_STORE_PATH, 'customer_features.csv')
+    with open(customer_file, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['customer_id', 'age', 'income', 'credit_score', 'purchase_history'])
+        writer.writerows(customers)
+    
+    # Product data
+    products = []
+    categories = ["Electronics", "Clothing", "Food", "Books", "Home"]
+    for i in range(500):
+        product_id = f"PROD-{1000 + i}"
+        price = np.random.uniform(10, 1000)
+        category = np.random.choice(categories)
+        rating = np.random.uniform(1, 5)
+        inventory = np.random.randint(0, 1000)
+        products.append([product_id, price, category, rating, inventory])
+    
+    # Save to CSV
+    product_file = os.path.join(OFFLINE_STORE_PATH, 'product_features.csv')
+    with open(product_file, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['product_id', 'price', 'category', 'rating', 'inventory'])
+        writer.writerows(products)
+    
+    # Transaction data
+    transactions = []
+    locations = ["New York", "San Francisco", "Chicago", "Austin", "Seattle"]
+    base_time = datetime.now() - timedelta(days=30)
+    
+    for i in range(2000):
+        transaction_id = f"TRANS-{1000 + i}"
+        amount = np.random.uniform(10, 500)
+        timestamp = base_time + timedelta(minutes=np.random.randint(1, 43200))
+        location = np.random.choice(locations)
+        transactions.append([transaction_id, amount, timestamp, location])
+    
+    # Save to CSV
+    transaction_file = os.path.join(OFFLINE_STORE_PATH, 'transaction_features.csv')
+    with open(transaction_file, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['transaction_id', 'amount', 'timestamp', 'location'])
+        writer.writerows(transactions)
+    
+    print(f"Generated synthetic data in {OFFLINE_STORE_PATH}")
+
+# Populate online store with sample data
+def populate_online_store():
+    conn = sqlite3.connect(SQLITE_DB_PATH)
+    cursor = conn.cursor()
+    
+    # Sample customer data
+    for i in range(100):
+        customer_id = f"CUST-{1000 + i}"
+        age = np.random.randint(18, 80)
+        income = np.random.randint(30000, 150000)
+        credit_score = np.random.randint(300, 850)
+        purchase_history = np.random.randint(0, 100)
+        last_updated = datetime.now()
+        
+        cursor.execute(
+            "INSERT OR REPLACE INTO customer_features VALUES (?, ?, ?, ?, ?, ?)",
+            (customer_id, age, income, credit_score, purchase_history, last_updated)
+        )
+    
+    # Sample product data
+    categories = ["Electronics", "Clothing", "Food", "Books", "Home"]
+    for i in range(50):
+        product_id = f"PROD-{1000 + i}"
+        price = np.random.uniform(10, 1000)
+        category = np.random.choice(categories)
+        rating = np.random.uniform(1, 5)
+        inventory = np.random.randint(0, 1000)
+        last_updated = datetime.now()
+        
+        cursor.execute(
+            "INSERT OR REPLACE INTO product_features VALUES (?, ?, ?, ?, ?, ?)",
+            (product_id, price, category, rating, inventory, last_updated)
+        )
+    
+    # Sample transaction data
+    locations = ["New York", "San Francisco", "Chicago", "Austin", "Seattle"]
+    for i in range(200):
+        transaction_id = f"TRANS-{1000 + i}"
+        amount = np.random.uniform(10, 500)
+        timestamp = datetime.now() - timedelta(minutes=np.random.randint(1, 60))
+        location = np.random.choice(locations)
+        last_updated = datetime.now()
+        
+        cursor.execute(
+            "INSERT OR REPLACE INTO transaction_features VALUES (?, ?, ?, ?, ?)",
+            (transaction_id, amount, timestamp, location, last_updated)
+        )
+    
+    conn.commit()
+    conn.close()
+    print("Online store populated with sample data")
+
+# Initialize database and generate data on module import
+initialize_sqlite_db()
+generate_offline_data()
+populate_online_store()
+
 # Mock Feast imports and functionality
 # In a real implementation, you would use the actual Feast library
 @dataclass
 class FeatureStore:
     def __init__(self, repo_path: str):
         self.repo_path = repo_path
+        self.offline_store_path = OFFLINE_STORE_PATH
+        self.online_store_path = SQLITE_DB_PATH
+        
         self.feature_views = {
             "customer_features": {
                 "features": ["age", "income", "credit_score", "purchase_history"],
-                "entities": ["customer_id"]
+                "entities": ["customer_id"],
+                "offline_file": os.path.join(self.offline_store_path, "customer_features.csv"),
+                "online_table": "customer_features"
             },
             "product_features": {
                 "features": ["price", "category", "rating", "inventory"],
-                "entities": ["product_id"]
+                "entities": ["product_id"],
+                "offline_file": os.path.join(self.offline_store_path, "product_features.csv"),
+                "online_table": "product_features"
             },
             "transaction_features": {
                 "features": ["amount", "timestamp", "location"],
-                "entities": ["transaction_id"]
+                "entities": ["transaction_id"],
+                "offline_file": os.path.join(self.offline_store_path, "transaction_features.csv"),
+                "online_table": "transaction_features"
             }
         }
-        print(f"Feature store initialized from {repo_path}")
+        print(f"Feature store initialized with offline store at {self.offline_store_path} and online store at {self.online_store_path}")
     
     def get_feature_service(self, name: str):
         if name in ["recommendation_service", "fraud_detection_service", "customer_segmentation_service"]:
             return FeatureService(name, self)
         raise ValueError(f"Feature service {name} not found")
     
+    def get_feature_view(self, name: str):
+        if name in self.feature_views:
+            return self.feature_views[name]
+        raise ValueError(f"Feature view {name} not found")
+    
     def get_historical_features(self, entity_df, features):
-        # Mock implementation to return historical features
-        num_rows = len(entity_df)
-        feature_dict = {}
+        """
+        Get historical features from offline store (CSV files)
         
+        Args:
+            entity_df: DataFrame containing entity IDs
+            features: List of features to retrieve in format 'feature_view:feature'
+        
+        Returns:
+            DataFrame with requested features
+        """
+        # Map features to their feature views
+        feature_view_map = {}
         for feature in features:
-            if "customer" in feature:
-                if "age" in feature:
-                    feature_dict[feature] = np.random.randint(18, 80, num_rows)
-                elif "income" in feature:
-                    feature_dict[feature] = np.random.randint(30000, 150000, num_rows)
-                elif "credit_score" in feature:
-                    feature_dict[feature] = np.random.randint(300, 850, num_rows)
-                elif "purchase_history" in feature:
-                    feature_dict[feature] = np.random.randint(0, 100, num_rows)
-            elif "product" in feature:
-                if "price" in feature:
-                    feature_dict[feature] = np.random.uniform(10, 1000, num_rows)
-                elif "category" in feature:
-                    categories = ["Electronics", "Clothing", "Food", "Books", "Home"]
-                    feature_dict[feature] = np.random.choice(categories, num_rows)
-                elif "rating" in feature:
-                    feature_dict[feature] = np.random.uniform(1, 5, num_rows)
-                elif "inventory" in feature:
-                    feature_dict[feature] = np.random.randint(0, 1000, num_rows)
-            elif "transaction" in feature:
-                if "amount" in feature:
-                    feature_dict[feature] = np.random.uniform(10, 500, num_rows)
-                elif "timestamp" in feature:
-                    base_time = datetime.now() - timedelta(days=30)
-                    timestamps = [base_time + timedelta(minutes=np.random.randint(1, 43200)) for _ in range(num_rows)]
-                    feature_dict[feature] = timestamps
-                elif "location" in feature:
-                    locations = ["New York", "San Francisco", "Chicago", "Austin", "Seattle"]
-                    feature_dict[feature] = np.random.choice(locations, num_rows)
+            parts = feature.split(':')
+            if len(parts) != 2:
+                continue
+            view_name, feat_name = parts
+            if view_name not in feature_view_map:
+                feature_view_map[view_name] = []
+            feature_view_map[view_name].append(feat_name)
         
-        df = pd.DataFrame(feature_dict)
-        for col in entity_df.columns:
-            df[col] = entity_df[col].values
-            
-        return df
+        # Load required feature views from CSV files
+        feature_dfs = {}
+        for view_name, feat_list in feature_view_map.items():
+            if view_name in self.feature_views:
+                csv_file = self.feature_views[view_name]["offline_file"]
+                entity_col = self.feature_views[view_name]["entities"][0]  # Assuming single entity
+                try:
+                    df = pd.read_csv(csv_file)
+                    # Only keep requested features and entity column
+                    keep_cols = [entity_col] + feat_list
+                    keep_cols = [col for col in keep_cols if col in df.columns]
+                    df = df[keep_cols]
+                    feature_dfs[view_name] = df
+                except Exception as e:
+                    print(f"Error loading {csv_file}: {str(e)}")
+                    # Fall back to synthetic data for missing files
+                    num_rows = 1000
+                    fallback_data = {}
+                    fallback_data[entity_col] = [f"{entity_col.split('_')[0].upper()}-{1000 + i}" for i in range(num_rows)]
+                    
+                    for feat in feat_list:
+                        if "age" in feat:
+                            fallback_data[feat] = np.random.randint(18, 80, num_rows)
+                        elif "income" in feat:
+                            fallback_data[feat] = np.random.randint(30000, 150000, num_rows)
+                        elif "credit_score" in feat:
+                            fallback_data[feat] = np.random.randint(300, 850, num_rows)
+                        elif "purchase_history" in feat:
+                            fallback_data[feat] = np.random.randint(0, 100, num_rows)
+                        elif "price" in feat:
+                            fallback_data[feat] = np.random.uniform(10, 1000, num_rows)
+                        elif "category" in feat:
+                            categories = ["Electronics", "Clothing", "Food", "Books", "Home"]
+                            fallback_data[feat] = np.random.choice(categories, num_rows)
+                        elif "rating" in feat:
+                            fallback_data[feat] = np.random.uniform(1, 5, num_rows)
+                        elif "inventory" in feat:
+                            fallback_data[feat] = np.random.randint(0, 1000, num_rows)
+                        elif "amount" in feat:
+                            fallback_data[feat] = np.random.uniform(10, 500, num_rows)
+                        elif "timestamp" in feat:
+                            base_time = datetime.now() - timedelta(days=30)
+                            fallback_data[feat] = [base_time + timedelta(minutes=np.random.randint(1, 43200)) for _ in range(num_rows)]
+                        elif "location" in feat:
+                            locations = ["New York", "San Francisco", "Chicago", "Austin", "Seattle"]
+                            fallback_data[feat] = np.random.choice(locations, num_rows)
+                    
+                    feature_dfs[view_name] = pd.DataFrame(fallback_data)
+        
+        # Join with entity dataframe
+        result_df = entity_df.copy()
+        
+        for view_name, feat_df in feature_dfs.items():
+            entity_col = self.feature_views[view_name]["entities"][0]
+            if entity_col in result_df.columns and entity_col in feat_df.columns:
+                for feat in feature_view_map[view_name]:
+                    if feat in feat_df.columns:
+                        # Create feature column name in form 'view:feature'
+                        feature_col = f"{view_name}:{feat}"
+                        # Join the feature to the result dataframe
+                        result_df = pd.merge(
+                            result_df,
+                            feat_df[[entity_col, feat]].rename(columns={feat: feature_col}),
+                            on=entity_col,
+                            how='left'
+                        )
+        
+        # Fill NaN values for missing features with random values as fallback
+        for feature in features:
+            if feature not in result_df.columns:
+                parts = feature.split(':')
+                if len(parts) != 2:
+                    continue
+                view_name, feat_name = parts
+                
+                num_rows = len(result_df)
+                if "customer" in view_name:
+                    if "age" in feat_name:
+                        result_df[feature] = np.random.randint(18, 80, num_rows)
+                    elif "income" in feat_name:
+                        result_df[feature] = np.random.randint(30000, 150000, num_rows)
+                    elif "credit_score" in feat_name:
+                        result_df[feature] = np.random.randint(300, 850, num_rows)
+                    elif "purchase_history" in feat_name:
+                        result_df[feature] = np.random.randint(0, 100, num_rows)
+                elif "product" in view_name:
+                    if "price" in feat_name:
+                        result_df[feature] = np.random.uniform(10, 1000, num_rows)
+                    elif "category" in feat_name:
+                        categories = ["Electronics", "Clothing", "Food", "Books", "Home"]
+                        result_df[feature] = np.random.choice(categories, num_rows)
+                    elif "rating" in feat_name:
+                        result_df[feature] = np.random.uniform(1, 5, num_rows)
+                    elif "inventory" in feat_name:
+                        result_df[feature] = np.random.randint(0, 1000, num_rows)
+                elif "transaction" in view_name:
+                    if "amount" in feat_name:
+                        result_df[feature] = np.random.uniform(10, 500, num_rows)
+                    elif "timestamp" in feat_name:
+                        base_time = datetime.now() - timedelta(days=30)
+                        result_df[feature] = [base_time + timedelta(minutes=np.random.randint(1, 43200)) for _ in range(num_rows)]
+                    elif "location" in feat_name:
+                        locations = ["New York", "San Francisco", "Chicago", "Austin", "Seattle"]
+                        result_df[feature] = np.random.choice(locations, num_rows)
+        
+        return result_df
     
     def get_online_features(self, entity_rows, features):
-        # Mock implementation to return online features
+        """
+        Get online features from SQLite database
+        
+        Args:
+            entity_rows: List of entity dictionaries
+            features: List of features to retrieve in format 'feature_view:feature'
+        
+        Returns:
+            Dictionary with features and values
+        """
         result = {
             "features": features,
             "values": []
         }
         
-        for entity_row in entity_rows:
-            values = {}
-            for feature in features:
-                if "customer" in feature:
-                    if "age" in feature:
-                        values[feature] = np.random.randint(18, 80)
-                    elif "income" in feature:
-                        values[feature] = np.random.randint(30000, 150000)
-                    elif "credit_score" in feature:
-                        values[feature] = np.random.randint(300, 850)
-                    elif "purchase_history" in feature:
-                        values[feature] = np.random.randint(0, 100)
-                elif "product" in feature:
-                    if "price" in feature:
-                        values[feature] = np.random.uniform(10, 1000)
-                    elif "category" in feature:
-                        categories = ["Electronics", "Clothing", "Food", "Books", "Home"]
-                        values[feature] = np.random.choice(categories)
-                    elif "rating" in feature:
-                        values[feature] = np.random.uniform(1, 5)
-                    elif "inventory" in feature:
-                        values[feature] = np.random.randint(0, 1000)
-                elif "transaction" in feature:
-                    if "amount" in feature:
-                        values[feature] = np.random.uniform(10, 500)
-                    elif "timestamp" in feature:
-                        values[feature] = datetime.now() - timedelta(minutes=np.random.randint(1, 60))
-                    elif "location" in feature:
-                        locations = ["New York", "San Francisco", "Chicago", "Austin", "Seattle"]
-                        values[feature] = np.random.choice(locations)
+        try:
+            conn = sqlite3.connect(self.online_store_path)
+            cursor = conn.cursor()
             
-            for key, value in entity_row.items():
-                values[key] = value
+            for entity_row in entity_rows:
+                values = {}
                 
-            result["values"].append(values)
+                # Map features to their feature views
+                feature_view_map = {}
+                for feature in features:
+                    parts = feature.split(':')
+                    if len(parts) != 2:
+                        continue
+                    view_name, feat_name = parts
+                    if view_name not in feature_view_map:
+                        feature_view_map[view_name] = []
+                    feature_view_map[view_name].append(feat_name)
+                
+                # Query each feature view
+                for view_name, feat_list in feature_view_map.items():
+                    if view_name in self.feature_views:
+                        table_name = self.feature_views[view_name]["online_table"]
+                        entity_col = self.feature_views[view_name]["entities"][0]  # Assuming single entity
+                        entity_val = entity_row.get(entity_col)
+                        
+                        if entity_val:
+                            # Build query for requested features
+                            select_cols = ", ".join(feat_list)
+                            query = f"SELECT {select_cols} FROM {table_name} WHERE {entity_col} = ?"
+                            
+                            cursor.execute(query, (entity_val,))
+                            row = cursor.fetchone()
+                            
+                            if row:
+                                # Add features to values dict
+                                for i, feat in enumerate(feat_list):
+                                    feature_name = f"{view_name}:{feat}"
+                                    values[feature_name] = row[i]
+                
+                # Fill in missing features with random values
+                for feature in features:
+                    if feature not in values:
+                        parts = feature.split(':')
+                        if len(parts) != 2:
+                            continue
+                        view_name, feat_name = parts
+                        
+                        if "customer" in view_name:
+                            if "age" in feat_name:
+                                values[feature] = np.random.randint(18, 80)
+                            elif "income" in feat_name:
+                                values[feature] = np.random.randint(30000, 150000)
+                            elif "credit_score" in feat_name:
+                                values[feature] = np.random.randint(300, 850)
+                            elif "purchase_history" in feat_name:
+                                values[feature] = np.random.randint(0, 100)
+                        elif "product" in view_name:
+                            if "price" in feat_name:
+                                values[feature] = np.random.uniform(10, 1000)
+                            elif "category" in feat_name:
+                                categories = ["Electronics", "Clothing", "Food", "Books", "Home"]
+                                values[feature] = np.random.choice(categories)
+                            elif "rating" in feat_name:
+                                values[feature] = np.random.uniform(1, 5)
+                            elif "inventory" in feat_name:
+                                values[feature] = np.random.randint(0, 1000)
+                        elif "transaction" in view_name:
+                            if "amount" in feat_name:
+                                values[feature] = np.random.uniform(10, 500)
+                            elif "timestamp" in feat_name:
+                                values[feature] = datetime.now() - timedelta(minutes=np.random.randint(1, 60))
+                            elif "location" in feat_name:
+                                locations = ["New York", "San Francisco", "Chicago", "Austin", "Seattle"]
+                                values[feature] = np.random.choice(locations)
+                
+                # Add entity values to result
+                for key, value in entity_row.items():
+                    values[key] = value
+                
+                result["values"].append(values)
             
+            conn.close()
+            
+        except Exception as e:
+            print(f"Error querying online store: {str(e)}")
+            # Fall back to random data generation
+            for entity_row in entity_rows:
+                values = {}
+                for feature in features:
+                    parts = feature.split(':')
+                    if len(parts) != 2:
+                        continue
+                    view_name, feat_name = parts
+                    
+                    if "customer" in view_name:
+                        if "age" in feat_name:
+                            values[feature] = np.random.randint(18, 80)
+                        elif "income" in feat_name:
+                            values[feature] = np.random.randint(30000, 150000)
+                        elif "credit_score" in feat_name:
+                            values[feature] = np.random.randint(300, 850)
+                        elif "purchase_history" in feat_name:
+                            values[feature] = np.random.randint(0, 100)
+                    elif "product" in view_name:
+                        if "price" in feat_name:
+                            values[feature] = np.random.uniform(10, 1000)
+                        elif "category" in feat_name:
+                            categories = ["Electronics", "Clothing", "Food", "Books", "Home"]
+                            values[feature] = np.random.choice(categories)
+                        elif "rating" in feat_name:
+                            values[feature] = np.random.uniform(1, 5)
+                        elif "inventory" in feat_name:
+                            values[feature] = np.random.randint(0, 1000)
+                    elif "transaction" in view_name:
+                        if "amount" in feat_name:
+                            values[feature] = np.random.uniform(10, 500)
+                        elif "timestamp" in feat_name:
+                            values[feature] = datetime.now() - timedelta(minutes=np.random.randint(1, 60))
+                        elif "location" in feat_name:
+                            locations = ["New York", "San Francisco", "Chicago", "Austin", "Seattle"]
+                            values[feature] = np.random.choice(locations)
+                
+                # Add entity values to result
+                for key, value in entity_row.items():
+                    values[key] = value
+                    
+                result["values"].append(values)
+        
         return result
 
 @dataclass
@@ -141,6 +509,13 @@ class FeatureService:
     feature_store: FeatureStore
     
     def get_features(self):
+        # Check if this is a custom feature service
+        if hasattr(self.feature_store, '_agentic_feature_store'):
+            agentic_store = self.feature_store._agentic_feature_store
+            if hasattr(agentic_store, 'custom_feature_services') and self.name in agentic_store.custom_feature_services:
+                return agentic_store.custom_feature_services[self.name]["features"]
+        
+        # Standard predefined services
         if self.name == "recommendation_service":
             return [
                 "customer_features:age", 
@@ -185,12 +560,36 @@ class ActionHistory(BaseModel):
 class ModeToggle(BaseModel):
     use_agent: bool
 
+class FeatureViewRequest(BaseModel):
+    name: str
+    entity: str
+    features: List[str]
+    description: str = ""
+
+class FeatureServiceRequest(BaseModel):
+    name: str
+    features: List[str]
+    description: str = ""
+    use_case: str = ""
+
+class DataSourceAnalysisRequest(BaseModel):
+    data_source: str
+    entity_type: str = ""
+
+class FeatureSuggestionRequest(BaseModel):
+    use_case: str
+    entity_type: str = ""
+
 # Agentic Feature Store Service
 class AgenticFeatureStore:
     def __init__(self, feature_store: FeatureStore, use_agent: bool = True):
         self.feature_store = feature_store
         self.action_history: List[ActionHistory] = []
         self.use_agent = use_agent
+        
+        # Custom feature views and services created by the agent
+        self.custom_feature_views = {}
+        self.custom_feature_services = {}
         
         # Get Ollama base URL from environment or use default
         ollama_base_url = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
@@ -223,6 +622,26 @@ class AgenticFeatureStore:
                         description="Get the features defined in a specific feature service"
                     ),
                     Tool(
+                        name="create_feature_view",
+                        func=self._tool_create_feature_view,
+                        description="Create a new feature view by combining features from existing feature views"
+                    ),
+                    Tool(
+                        name="create_feature_service",
+                        func=self._tool_create_feature_service,
+                        description="Create a new feature service for a specific ML use case by selecting relevant features"
+                    ),
+                    Tool(
+                        name="get_feature_views",
+                        func=self._tool_get_feature_views,
+                        description="Get a list of all available feature views in the feature store"
+                    ),
+                    Tool(
+                        name="get_feature_services",
+                        func=self._tool_get_feature_services,
+                        description="Get a list of all available feature services in the feature store"
+                    ),
+                    Tool(
                         name="recommend_products",
                         func=self._handle_recommendation,
                         description="Generate product recommendations for a customer based on their features"
@@ -236,6 +655,16 @@ class AgenticFeatureStore:
                         name="segment_customer",
                         func=self._handle_customer_segmentation,
                         description="Segment a customer based on their features and behavior"
+                    ),
+                    Tool(
+                        name="analyze_data_source",
+                        func=self._tool_analyze_data_source,
+                        description="Analyze a data source (CSV file) to identify potential features and entities"
+                    ),
+                    Tool(
+                        name="suggest_features_for_use_case",
+                        func=self._tool_suggest_features_for_use_case,
+                        description="Suggest relevant features for a specific ML use case based on available data"
                     )
                 ]
                 
@@ -295,6 +724,54 @@ class AgenticFeatureStore:
             4. Demographics
             
             Provide detailed segment classification with actionable insights."""
+        )
+        
+        self.feature_view_creation_prompt = PromptTemplate(
+            input_variables=["entity", "data_source", "existing_features", "use_case"],
+            template="""You are a feature engineering expert. Help create a new feature view for:
+            
+            Entity: {entity}
+            Data Source: {data_source}
+            Existing Features: {existing_features}
+            Use Case: {use_case}
+            
+            Analyze the data source and identify relevant features.
+            Consider:
+            1. Feature relevance to the use case
+            2. Feature transformation needs
+            3. Feature quality and coverage
+            4. Entity relationships
+            
+            For each feature, provide:
+            - Feature name
+            - Data type
+            - Description
+            - Relevance to use case (low, medium, high)
+            - Suggested transformations (if needed)
+            
+            Format your response as a structured feature view definition."""
+        )
+        
+        self.feature_service_creation_prompt = PromptTemplate(
+            input_variables=["use_case", "available_features", "entity_type"],
+            template="""You are a machine learning feature expert. Help create a new feature service for:
+            
+            Use Case: {use_case}
+            Entity Type: {entity_type}
+            Available Features: {available_features}
+            
+            Identify the most relevant features for this use case.
+            Consider:
+            1. Feature importance for the specific use case
+            2. Potential feature interactions
+            3. Required vs. optional features
+            4. Performance implications
+            
+            Format your response as a structured feature service definition with:
+            - Service name
+            - List of selected features with justification
+            - Expected performance impact
+            - Potential limitations"""
         )
 
     def add_to_history(self, action_type: str, description: str, status: str = "success") -> None:
@@ -557,11 +1034,332 @@ class AgenticFeatureStore:
             if not service_name:
                 return "Error: No feature service name provided"
             
+            # Check custom feature services first
+            if service_name in self.custom_feature_services:
+                service_info = self.custom_feature_services[service_name]
+                return json.dumps({
+                    "service_name": service_name, 
+                    "features": service_info["features"],
+                    "description": service_info.get("description", ""),
+                    "custom": True
+                })
+            
+            # Fall back to standard feature services
             service = self.feature_store.get_feature_service(service_name)
             features = service.get_features()
-            return json.dumps({"service_name": service_name, "features": features})
+            return json.dumps({"service_name": service_name, "features": features, "custom": False})
         except Exception as e:
             return f"Error retrieving feature service: {str(e)}"
+    
+    def _tool_create_feature_view(self, params: str) -> str:
+        try:
+            params_dict = json.loads(params) if isinstance(params, str) else params
+            name = params_dict.get("name")
+            entity = params_dict.get("entity")
+            features = params_dict.get("features", [])
+            description = params_dict.get("description", "")
+            
+            if not name or not entity or not features:
+                return "Error: Missing required parameters (name, entity, features)"
+            
+            # Check if name already exists
+            if name in self.feature_store.feature_views or name in self.custom_feature_views:
+                return f"Error: Feature view '{name}' already exists"
+            
+            # Create the custom feature view
+            self.custom_feature_views[name] = {
+                "features": features,
+                "entities": [entity],
+                "description": description,
+                "created_at": datetime.utcnow().isoformat()
+            }
+            
+            # Add to action history
+            self.add_to_history(
+                action_type="create_feature_view",
+                description=f"Created new feature view '{name}' with {len(features)} features for entity '{entity}'"
+            )
+            
+            return json.dumps({
+                "name": name,
+                "entity": entity,
+                "features": features,
+                "description": description,
+                "message": f"Successfully created feature view '{name}'"
+            })
+        except Exception as e:
+            self.add_to_history(
+                action_type="create_feature_view",
+                description=f"Failed to create feature view: {str(e)}",
+                status="error"
+            )
+            return f"Error creating feature view: {str(e)}"
+    
+    def _tool_create_feature_service(self, params: str) -> str:
+        try:
+            params_dict = json.loads(params) if isinstance(params, str) else params
+            name = params_dict.get("name")
+            features = params_dict.get("features", [])
+            description = params_dict.get("description", "")
+            use_case = params_dict.get("use_case", "")
+            
+            if not name or not features:
+                return "Error: Missing required parameters (name, features)"
+            
+            # Check if name already exists
+            if name in self.custom_feature_services:
+                return f"Error: Feature service '{name}' already exists"
+            
+            # Check if service can be created with standard get_feature_service
+            try:
+                self.feature_store.get_feature_service(name)
+                return f"Error: Feature service '{name}' already exists as a standard service"
+            except ValueError:
+                # This is expected - we want to create a new custom service
+                pass
+            
+            # Create the custom feature service
+            self.custom_feature_services[name] = {
+                "features": features,
+                "description": description,
+                "use_case": use_case,
+                "created_at": datetime.utcnow().isoformat()
+            }
+            
+            # Add to action history
+            self.add_to_history(
+                action_type="create_feature_service",
+                description=f"Created new feature service '{name}' with {len(features)} features for use case '{use_case}'"
+            )
+            
+            return json.dumps({
+                "name": name,
+                "features": features,
+                "description": description,
+                "use_case": use_case,
+                "message": f"Successfully created feature service '{name}'"
+            })
+        except Exception as e:
+            self.add_to_history(
+                action_type="create_feature_service",
+                description=f"Failed to create feature service: {str(e)}",
+                status="error"
+            )
+            return f"Error creating feature service: {str(e)}"
+    
+    def _tool_get_feature_views(self, _) -> str:
+        try:
+            # Combine standard and custom feature views
+            all_feature_views = {}
+            
+            # Add standard feature views
+            for name, view in self.feature_store.feature_views.items():
+                all_feature_views[name] = {
+                    "features": view["features"],
+                    "entities": view["entities"],
+                    "custom": False
+                }
+            
+            # Add custom feature views
+            for name, view in self.custom_feature_views.items():
+                all_feature_views[name] = {
+                    "features": view["features"],
+                    "entities": view["entities"],
+                    "description": view.get("description", ""),
+                    "created_at": view.get("created_at", ""),
+                    "custom": True
+                }
+            
+            return json.dumps(all_feature_views)
+        except Exception as e:
+            return f"Error retrieving feature views: {str(e)}"
+    
+    def _tool_get_feature_services(self, _) -> str:
+        try:
+            # Get standard feature service names
+            standard_services = ["recommendation_service", "fraud_detection_service", "customer_segmentation_service"]
+            
+            # Combine standard and custom feature services
+            all_services = {}
+            
+            # Add standard services
+            for name in standard_services:
+                try:
+                    service = self.feature_store.get_feature_service(name)
+                    all_services[name] = {
+                        "features": service.get_features(),
+                        "custom": False
+                    }
+                except ValueError:
+                    pass
+            
+            # Add custom services
+            for name, service in self.custom_feature_services.items():
+                all_services[name] = {
+                    "features": service["features"],
+                    "description": service.get("description", ""),
+                    "use_case": service.get("use_case", ""),
+                    "created_at": service.get("created_at", ""),
+                    "custom": True
+                }
+            
+            return json.dumps(all_services)
+        except Exception as e:
+            return f"Error retrieving feature services: {str(e)}"
+    
+    def _tool_analyze_data_source(self, params: str) -> str:
+        try:
+            params_dict = json.loads(params) if isinstance(params, str) else params
+            data_source = params_dict.get("data_source")
+            entity_type = params_dict.get("entity_type", "")
+            
+            if not data_source:
+                return "Error: Missing data_source parameter"
+            
+            # Check if data source exists in offline store
+            if data_source.endswith('.csv'):
+                file_path = os.path.join(self.feature_store.offline_store_path, data_source)
+                if not os.path.exists(file_path):
+                    return f"Error: Data source file '{file_path}' does not exist"
+                
+                # Analyze CSV file
+                try:
+                    df = pd.read_csv(file_path)
+                    
+                    # Get basic stats
+                    stats = {
+                        "filename": data_source,
+                        "rows": len(df),
+                        "columns": len(df.columns),
+                        "column_names": list(df.columns),
+                        "sample_data": df.head(5).to_dict(orient='records'),
+                    }
+                    
+                    # Use LLM to suggest entity and features if agent mode is enabled
+                    if self.use_agent and hasattr(self, 'llm'):
+                        # Use LLM to analyze and suggest features
+                        analysis_prompt = f"""
+                        You are a feature engineering expert. Analyze this dataset:
+                        
+                        Data Source: {data_source}
+                        Columns: {list(df.columns)}
+                        Sample Data: {df.head(5).to_dict(orient='records')}
+                        
+                        1. Identify the most likely entity column
+                        2. For each column, determine if it's a good feature and why
+                        3. Suggest any feature transformations that would be useful
+                        
+                        Format your response as a JSON object with:
+                        - suggested_entity: the column that appears to be the entity ID
+                        - features: list of suggested feature columns
+                        - transformations: suggested transformations
+                        """
+                        
+                        response = self.llm.invoke(analysis_prompt)
+                        if isinstance(response, dict) and "text" in response:
+                            response = response["text"]
+                        
+                        stats["ai_analysis"] = response
+                    
+                    # Add to action history
+                    self.add_to_history(
+                        action_type="analyze_data_source",
+                        description=f"Analyzed data source '{data_source}' with {len(df.columns)} columns and {len(df)} rows"
+                    )
+                    
+                    return json.dumps(stats, default=str)
+                except Exception as e:
+                    return f"Error analyzing CSV file: {str(e)}"
+            else:
+                return f"Error: Unsupported data source type. Only CSV files are supported."
+        except Exception as e:
+            return f"Error analyzing data source: {str(e)}"
+    
+    def _tool_suggest_features_for_use_case(self, params: str) -> str:
+        try:
+            params_dict = json.loads(params) if isinstance(params, str) else params
+            use_case = params_dict.get("use_case")
+            entity_type = params_dict.get("entity_type", "")
+            
+            if not use_case:
+                return "Error: Missing use_case parameter"
+            
+            # Get all available features from feature views
+            all_features = []
+            
+            # Add standard feature views
+            for name, view in self.feature_store.feature_views.items():
+                for feature in view["features"]:
+                    all_features.append(f"{name}:{feature}")
+            
+            # Add custom feature views
+            for name, view in self.custom_feature_views.items():
+                for feature in view["features"]:
+                    all_features.append(f"{name}:{feature}")
+            
+            # Use LLM to suggest features if agent mode is enabled
+            if self.use_agent and hasattr(self, 'llm'):
+                # Use LLM to suggest features for use case
+                chain = LLMChain(
+                    llm=self.llm,
+                    prompt=self.feature_service_creation_prompt
+                )
+                
+                response = chain.invoke({
+                    "use_case": use_case,
+                    "available_features": ', '.join(all_features),
+                    "entity_type": entity_type
+                })
+                
+                if isinstance(response, dict) and "text" in response:
+                    response = response["text"]
+                
+                # Add to action history
+                self.add_to_history(
+                    action_type="suggest_features",
+                    description=f"Generated feature suggestions for use case '{use_case}'"
+                )
+                
+                return json.dumps({
+                    "use_case": use_case,
+                    "available_features": all_features,
+                    "suggestions": response
+                })
+            else:
+                # Without LLM, return basic recommendations based on use case
+                recommended_features = []
+                
+                if "recommendation" in use_case.lower():
+                    recommended_features = [
+                        "customer_features:age",
+                        "customer_features:income",
+                        "customer_features:purchase_history",
+                        "product_features:price",
+                        "product_features:category",
+                        "product_features:rating"
+                    ]
+                elif "fraud" in use_case.lower():
+                    recommended_features = [
+                        "customer_features:credit_score",
+                        "transaction_features:amount",
+                        "transaction_features:timestamp",
+                        "transaction_features:location"
+                    ]
+                elif "segment" in use_case.lower():
+                    recommended_features = [
+                        "customer_features:age",
+                        "customer_features:income",
+                        "customer_features:credit_score",
+                        "customer_features:purchase_history"
+                    ]
+                
+                return json.dumps({
+                    "use_case": use_case,
+                    "available_features": all_features,
+                    "recommended_features": recommended_features
+                })
+        except Exception as e:
+            return f"Error suggesting features: {str(e)}"
     
     def _handle_recommendation(self, parameters: Dict[str, Any], enhanced_response: str = None) -> FeatureResponse:
         customer_id = parameters.get("customer_id")
@@ -890,6 +1688,9 @@ app.add_middleware(
 feature_store = FeatureStore(repo_path="./feature_repo")
 agentic_feature_store = AgenticFeatureStore(feature_store, use_agent=True)  # Default to agent mode
 
+# Add reference to agentic feature store in the feature store for custom services
+feature_store._agentic_feature_store = agentic_feature_store
+
 @app.get("/")
 async def root():
     return {"message": "Agentic AI with Feast Feature Store API"}
@@ -975,6 +1776,220 @@ async def demo_customer_segmentation(customer_id: str = Body(..., embed=True)):
         action_type="segmentation"
     )
     return await agentic_feature_store.process_feature_request(request)
+
+# New endpoints for enhanced feature store management
+
+@app.get("/feature-views/custom")
+async def get_custom_feature_views():
+    """Get all custom feature views created by the agent"""
+    return {"custom_feature_views": agentic_feature_store.custom_feature_views}
+
+@app.post("/feature-views/create")
+async def create_feature_view(request: FeatureViewRequest):
+    """Create a new feature view"""
+    if not agentic_feature_store.use_agent:
+        return {
+            "message": "Feature view creation is only available in Agent mode",
+            "status": "error"
+        }
+    
+    try:
+        result = agentic_feature_store._tool_create_feature_view(json.dumps({
+            "name": request.name,
+            "entity": request.entity,
+            "features": request.features,
+            "description": request.description
+        }))
+        
+        result_data = json.loads(result)
+        return {
+            "message": result_data.get("message", "Feature view created successfully"),
+            "status": "success",
+            "data": result_data
+        }
+    except Exception as e:
+        return {
+            "message": f"Error creating feature view: {str(e)}",
+            "status": "error"
+        }
+
+@app.get("/feature-services/custom")
+async def get_custom_feature_services():
+    """Get all custom feature services created by the agent"""
+    return {"custom_feature_services": agentic_feature_store.custom_feature_services}
+
+@app.post("/feature-services/create")
+async def create_feature_service(request: FeatureServiceRequest):
+    """Create a new feature service"""
+    if not agentic_feature_store.use_agent:
+        return {
+            "message": "Feature service creation is only available in Agent mode",
+            "status": "error"
+        }
+    
+    try:
+        result = agentic_feature_store._tool_create_feature_service(json.dumps({
+            "name": request.name,
+            "features": request.features,
+            "description": request.description,
+            "use_case": request.use_case
+        }))
+        
+        result_data = json.loads(result)
+        return {
+            "message": result_data.get("message", "Feature service created successfully"),
+            "status": "success",
+            "data": result_data
+        }
+    except Exception as e:
+        return {
+            "message": f"Error creating feature service: {str(e)}",
+            "status": "error"
+        }
+
+@app.post("/data-source/analyze")
+async def analyze_data_source(request: DataSourceAnalysisRequest):
+    """Analyze a data source to identify features and entities"""
+    if not agentic_feature_store.use_agent:
+        return {
+            "message": "Data source analysis is only available in Agent mode",
+            "status": "error"
+        }
+    
+    try:
+        result = agentic_feature_store._tool_analyze_data_source(json.dumps({
+            "data_source": request.data_source,
+            "entity_type": request.entity_type
+        }))
+        
+        try:
+            result_data = json.loads(result)
+            return {
+                "message": "Data source analyzed successfully",
+                "status": "success",
+                "data": result_data
+            }
+        except:
+            # If result is not valid JSON, return as text
+            return {
+                "message": "Data source analyzed with warnings",
+                "status": "success",
+                "data": {"analysis": result}
+            }
+    except Exception as e:
+        return {
+            "message": f"Error analyzing data source: {str(e)}",
+            "status": "error"
+        }
+
+@app.post("/features/suggest")
+async def suggest_features_for_use_case(request: FeatureSuggestionRequest):
+    """Suggest features for a specific use case"""
+    if not agentic_feature_store.use_agent:
+        return {
+            "message": "Feature suggestion is only available in Agent mode",
+            "status": "error"
+        }
+    
+    try:
+        result = agentic_feature_store._tool_suggest_features_for_use_case(json.dumps({
+            "use_case": request.use_case,
+            "entity_type": request.entity_type
+        }))
+        
+        try:
+            result_data = json.loads(result)
+            return {
+                "message": "Features suggested successfully",
+                "status": "success",
+                "data": result_data
+            }
+        except:
+            # If result is not valid JSON, return as text
+            return {
+                "message": "Features suggested with warnings",
+                "status": "success",
+                "data": {"suggestions": result}
+            }
+    except Exception as e:
+        return {
+            "message": f"Error suggesting features: {str(e)}",
+            "status": "error"
+        }
+
+@app.get("/stores/info")
+async def get_store_info():
+    """Get information about the offline and online stores"""
+    try:
+        # Count offline records
+        offline_stats = {}
+        for view_name, view in agentic_feature_store.feature_store.feature_views.items():
+            file_path = view.get("offline_file", "")
+            if file_path and os.path.exists(file_path):
+                try:
+                    df = pd.read_csv(file_path)
+                    offline_stats[view_name] = {
+                        "file": os.path.basename(file_path),
+                        "rows": len(df),
+                        "columns": len(df.columns),
+                        "entity_column": view["entities"][0],
+                        "feature_columns": view["features"]
+                    }
+                except Exception as e:
+                    offline_stats[view_name] = {
+                        "file": os.path.basename(file_path),
+                        "error": str(e)
+                    }
+        
+        # Count online records
+        online_stats = {}
+        try:
+            conn = sqlite3.connect(agentic_feature_store.feature_store.online_store_path)
+            cursor = conn.cursor()
+            
+            for view_name, view in agentic_feature_store.feature_store.feature_views.items():
+                table_name = view.get("online_table", "")
+                if table_name:
+                    try:
+                        cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+                        count = cursor.fetchone()[0]
+                        cursor.execute(f"SELECT * FROM {table_name} LIMIT 1")
+                        columns = [description[0] for description in cursor.description]
+                        
+                        online_stats[view_name] = {
+                            "table": table_name,
+                            "rows": count,
+                            "columns": columns
+                        }
+                    except Exception as e:
+                        online_stats[view_name] = {
+                            "table": table_name,
+                            "error": str(e)
+                        }
+            
+            conn.close()
+        except Exception as e:
+            online_stats["error"] = str(e)
+        
+        return {
+            "message": "Store information retrieved successfully",
+            "status": "success",
+            "data": {
+                "offline_store": {
+                    "path": agentic_feature_store.feature_store.offline_store_path,
+                    "stats": offline_stats
+                },
+                "online_store": {
+                    "path": agentic_feature_store.feature_store.online_store_path,
+                    "stats": online_stats
+                }
+            }
+        }
+    except Exception as e:
+        return {
+            "message": f"Error retrieving store information: {str(e)}",
+            "status": "error"
+        }
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
