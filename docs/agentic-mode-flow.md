@@ -34,16 +34,25 @@ This document outlines the complete function call hierarchy when agentic mode is
 - Creates a `FeatureRequest` object with `entity_id` and `action_type`
 - Calls `agentic_feature_store.process_feature_request(request)`
 
-### 2. Agentic Processing Flow
+### 2. Autonomous Feature Engineering
 
-- `process_feature_request()` handles feature request
-- Adds process start to action history
-- **Creates natural language query**: `_create_agent_query()`
+- `process_feature_request()` checks if a custom feature service exists for the use case
+- If no custom service exists, initiates autonomous feature engineering:
+  - Determines entity type based on use case
+  - Analyzes data sources (`_tool_analyze_data_source()`) for relevant features
+  - Generates feature suggestions (`_tool_suggest_features_for_use_case()`)
+  - Creates a custom feature service for the use case (`_tool_create_feature_service()`)
+  - Logs each step in the action history
+
+### 3. Agent Query Creation
+
+- **Creates enhanced natural language query**: `_create_agent_query()`
+- If custom service exists, includes service info in the query
 - Adds query creation to action history
 - **Invokes AI agent**: `agent.ainvoke({"input": query})`
 - Adds agent invocation to action history
 
-### 3. Agent Execution Flow
+### 4. Agent Execution Flow
 
 - Agent uses LangChain tools to interact with feature store:
   - `_tool_get_online_features()`
@@ -57,7 +66,7 @@ This document outlines the complete function call hierarchy when agentic mode is
 - Agent processes query through `OllamaLLM` backend
 - Adds agent response to action history
 
-### 4. Response Processing
+### 5. Response Processing
 
 - **Process agent response**: `_process_agent_response()`
 - Adds response processing to action history
@@ -66,6 +75,7 @@ This document outlines the complete function call hierarchy when agentic mode is
   - **Fraud Detection**: `_handle_fraud_detection()`
   - **Segmentation**: `_handle_customer_segmentation()`
 
+- Each handler checks if a custom feature service exists and uses it if available
 - Uses LLMChain with specialized prompts for enhanced insights:
   - `recommendation_prompt`
   - `fraud_prompt`
@@ -76,7 +86,7 @@ This document outlines the complete function call hierarchy when agentic mode is
 - Adds successful action to history
 - Returns `FeatureResponse` with data enriched with AI insights
 
-### 5. Backend to Frontend Response
+### 6. Backend to Frontend Response
 
 - API endpoint returns the `FeatureResponse` to frontend
 - Frontend receives response in `handleSubmit()` callback
@@ -110,29 +120,44 @@ In case of AI agent failure:
 
 ## Autonomous Feature Management Flow
 
-When using the agentic mode for feature management:
+### Automatic Feature Service Creation (Triggered by "Get Features")
 
-### 1. Data Source Analysis
+When a user clicks "Get Features" in agentic mode:
+
+1. System checks if a custom feature service exists for the use case
+2. If not, it automatically:
+   - Analyzes all available data sources (customer, product, transaction CSVs)
+   - Suggests the most relevant features for the use case
+   - Creates a custom feature service named `agentic_{action_type}_service`
+   - Logs the entire process in the action history
+3. The custom service is then used for feature retrieval
+4. The agent is informed about the custom service in its query
+
+### Manual Feature Management (via API)
+
+The system also supports manual feature management through APIs:
+
+#### 1. Data Source Analysis
 
 - Analyze a data source using `_tool_analyze_data_source()`
 - AI agent examines CSV files to identify potential features and entities
 - Results stored and returned with AI analysis
 
-### 2. Feature View Creation
+#### 2. Feature View Creation
 
 - Create a feature view using `_tool_create_feature_view()`
 - AI agent identifies appropriate features and entity
 - Stores new feature view in `custom_feature_views`
 - Adds creation to action history
 
-### 3. Feature Service Creation
+#### 3. Feature Service Creation
 
 - Create a feature service using `_tool_create_feature_service()`
 - AI agent selects relevant features for specific use case
 - Stores new feature service in `custom_feature_services`
 - Adds creation to action history
 
-### 4. Feature Suggestion
+#### 4. Feature Suggestion
 
 - Suggest features using `_tool_suggest_features_for_use_case()`
 - AI agent analyzes available features to find relevant ones for use case
@@ -153,10 +178,10 @@ When using the agentic mode for feature management:
 - `FeatureService` - Class representing feature services
 
 ### Key Methods
-- `process_feature_request()` - Main method for processing feature requests
-- `_create_agent_query()` - Creates natural language queries for the agent
+- `process_feature_request()` - Main method for processing feature requests with autonomous feature engineering
+- `_create_agent_query()` - Creates natural language queries for the agent with service info
 - `_process_agent_response()` - Processes the agent's response
-- `_handle_recommendation()`, `_handle_fraud_detection()`, `_handle_customer_segmentation()` - Use case handlers
+- `_handle_recommendation()`, `_handle_fraud_detection()`, `_handle_customer_segmentation()` - Use case handlers that use custom services
 
 ## Example Flow: Product Recommendations in Agent Mode
 
@@ -164,9 +189,13 @@ When using the agentic mode for feature management:
 2. User selects "Recommendation" tab and enters a customer ID
 3. User clicks "Get Features" button
 4. Frontend sends request to `/demo/recommendation` with customer ID
-5. Backend creates natural language query: "Retrieve features for customer [ID] and provide product recommendations"
-6. Agent invoked to process query through Ollama LLM
-7. Agent uses tools to retrieve customer features
-8. Features processed with LLM to generate enhanced recommendations with reasoning
-9. Enhanced response sent back to frontend with AI insights
-10. Frontend renders personalized recommendations with feature importance visualization
+5. Backend checks if a custom feature service exists for recommendations
+6. If not, it analyzes data sources and creates an `agentic_recommendation_service`
+7. Backend creates enhanced natural language query with service info
+8. Agent invoked to process query through Ollama LLM
+9. Agent uses tools to retrieve customer features using the custom service
+10. Features processed with LLM to generate enhanced recommendations with reasoning
+11. Enhanced response sent back to frontend with AI insights
+12. Frontend renders personalized recommendations with feature importance visualization
+
+This autonomous flow enables the system to automatically create and use optimal feature views and services for each use case without requiring explicit user action beyond clicking "Get Features".
