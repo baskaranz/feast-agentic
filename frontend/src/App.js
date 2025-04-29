@@ -1,11 +1,11 @@
 import React from 'react';
 import './App.css';
-import AgenticAIDashboard from './components/AgenticAIDashboard.jsx';
+import FeatureStoreDashboard from './components/FeatureStoreDashboard.jsx';
 
 function App() {
   return (
     <div className="App bg-gray-100 min-h-screen">
-      <AgenticAIDashboard />
+      <FeatureStoreDashboard />
     </div>
   );
 }
